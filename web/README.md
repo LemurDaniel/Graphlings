@@ -2,7 +2,7 @@
 
 | File | Content |
 | --- | --- |
-| `index.html` | The one page: workspace, code, explanation and chat panels. |
+| `index.html` | The one page: graph workspace, foldable code panel, start button with the chat popup. |
 | `style.css` | Look of the page, light and dark. |
 | `src/app.js` | Wires editor, code panel, explanations and the Python bridge. |
 | `src/blocks.graph.js` | The graph blocks as data, their explanations and the palette. |

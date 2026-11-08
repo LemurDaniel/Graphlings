@@ -426,20 +426,6 @@
 
 body.gl-dragging, body.gl-dragging * { cursor: grabbing !important; user-select: none; }
 
-/* Loops: dashed curves that are no edges, e.g. the chat loop from END back to START */
-.gl-loop .gl-edge {
-    stroke: var(--loop-colour, #e0a100);
-    stroke-width: 2.5;
-    stroke-dasharray: 8 7;
-    opacity: 0.8;
-}
-
-.gl-loop-label {
-    fill: var(--loop-colour, #e0a100);
-    font: 600 12px "Segoe UI", system-ui, sans-serif;
-    text-anchor: middle;
-    pointer-events: none;
-}
 
 /* Uses: sockets on the bottom edge of a step, for its resources */
 .gl-card-uses {

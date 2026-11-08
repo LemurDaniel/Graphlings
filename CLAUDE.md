@@ -4,6 +4,8 @@ A playful learning tool: build agent graphs from cards and puzzle pieces, get re
 Goal: understand agents and graphs **in general**. The generated code is plain Python (stdlib only),
 **no LangChain/LangGraph**: state, nodes, edges, engine and the HTTP call to the model are visible in one file.
 
+Read `progress.md` first (goal, decisions, open items, next step) and update it at the end of a session.
+
 ## Layout
 
 - `web/`: the page. Own graph engine in `web/src/engine/` (no Blockly), cards and pieces in `blocks.graph.js`,
@@ -17,7 +19,8 @@ Goal: understand agents and graphs **in general**. The generated code is plain P
 ```powershell
 ./build.ps1 -Task Runtime                                     # llama-server + model into runtime/
 uv run --with-requirements app/requirements.txt app/main.py   # run the app from source
-node tests/test.generator.mjs                                 # generate all examples (node is not on PATH here)
+node tests/test.generator.mjs                                 # generate + check all examples (node is not on PATH here)
+python tests/test.model.py                                    # examples against the real model, checks the way taken
 ./build.ps1                                                   # exe + zip, only on request (takes long)
 ```
 
@@ -47,4 +50,5 @@ UI only: serve `web/` with any static server. After editing JS/CSS, browsers cac
 
 ## Notes
 
-- 2026-11-08: The "Claude Code 16 tips" checklist has been reviewed for this repo (see the session from that day).
+- 2026-11-08: The "Claude Code 16 tips" checklist has been reviewed for this repo. Adopted: progress.md (#10/#12/#16),
+  tests that check (#14), context audit (#1). Declined: settings gate for git push (#15).

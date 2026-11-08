@@ -1,6 +1,6 @@
 # 🐣 Graphlings
 
-Agents und Graphen zum Zusammenstecken. In der Mitte baust du einen Graphen aus Karten: kleine Graphlings, die du mit Kanten von Puzzle-Nase zu Puzzle-Kerbe verbindest. In jeder Karte steckt ein Puzzle mit ihren Einstellungen. Rechts entsteht live lesbarer Python-Code, und mit ▶️ läuft der Graph sofort gegen ein eingebautes lokales Modell. Dabei leuchtet die Karte, die gerade arbeitet.
+Agents und Graphen zum Zusammenstecken. In der Mitte baust du einen Graphen aus Karten: kleine Graphlings, die du mit Kanten von Puzzle-Nase zu Puzzle-Kerbe verbindest. In jeder Karte steckt ein Puzzle mit ihren Einstellungen. Mit **🐍 Code zeigen** klappst du den lesbaren Python-Code daneben auf, er entsteht live mit. Mit **▶️ Graph starten** unten rechts läuft der Graph sofort gegen ein eingebautes lokales Modell. Dabei leuchtet die Karte, die gerade arbeitet.
 
 Es geht ums **Verstehen**, nicht um ein Framework. Der erzeugte Code ist reines Python (nur Standardbibliothek). State, Knoten, Kanten, die kleine Graph-Engine und der HTTP-Aufruf ans Modell stehen alle sichtbar in einer Datei. Ein Klick auf eine Karte, eine Kante oder ein Puzzleteil markiert die zugehörigen Zeilen im Code, ein Klick auf eine Zeile zeigt das Teil. Alles erklärt kurz, warum der Code so aussieht.
 
@@ -8,7 +8,7 @@ Es geht ums **Verstehen**, nicht um ein Framework. Der erzeugte Code ist reines 
 
 1. `Graphlings-win-x64.zip` herunterladen und entpacken.
 2. `Graphlings/Graphlings.exe` starten. Windows warnt eventuell („Unbekannter Herausgeber“): *Weitere Informationen → Trotzdem ausführen*.
-3. Warten, bis oben rechts **🟢 Modell bereit** steht, dann **▶️ Graph starten** und lostippen.
+3. Unten rechts **▶️ Graph starten** klicken. Im Fenster, das aufgeht, warten, bis **🟢 Modell bereit** steht, dann lostippen.
 
 Nichts zu installieren: Python, llama-server und das Modell (Qwen2.5 1.5B) stecken im Ordner. Alles läuft lokal, ohne Internet.
 
@@ -41,7 +41,7 @@ Zwei Arten von Linien: **durchgezogen** (Nase → Kerbe) heißt „danach läuft
 | 🔤 Feld | Notizzettel | weiterer Schlüssel in `new_state()` |
 | ⚙️ Einstellungen aus .env | Bauplan | `load_env_file()`, `os.getenv()` und Prüfungen |
 
-Im Chat endet eine Runde bei END, danach wartet `main()` auf die nächste Frage und startet den Graphen wieder bei START. Den **Bauplan** öffnest du mit ⟨ am rechten Rand der Arbeitsfläche, wenn keine Karte ausgewählt ist. Dort wählst du, welcher Agent im Chat antwortet.
+Im Chat endet eine Runde bei END, danach wartet `main()` auf die nächste Frage und startet den Graphen wieder bei START. Den **Bauplan** öffnest du mit ⟨ am rechten Rand der Arbeitsfläche, wenn keine Karte ausgewählt ist. Dort stellst du den Modus ein und wie viele Schritte eine Runde höchstens machen darf. Welche Agenten ihre Antwort zeigen, entscheidet 
 
 **🔌 Werkstatt und MCP:** Die Werkzeuge hängen an der Werkstatt, der Agent steckt sich mit einer gepunkteten Linie ein. Das ist die Idee vom [Model Context Protocol](https://modelcontextprotocol.io): `list_tools()` entspricht `tools/list`, `call_tool()` entspricht `tools/call`. Bei echtem MCP läuft die Werkstatt als eigenes Programm, hier steht sie in derselben Datei.
 
@@ -80,6 +80,6 @@ Nur die Oberfläche ohne Chat: `web/` mit einem beliebigen statischen Webserver 
 | --- | --- |
 | `app/` | Python: Fenster (pywebview), Runner für den erzeugten Code, Modellserver |
 | `web/` | Die Seite: eigener Graph-Editor, Code-Panel, Erklärungen, Chat |
-| `tests/` | Erzeugt `chat.py` aus dem Beispiel headless mit Node |
+| `tests/` | `test.generator.mjs`: erzeugt und prüft alle Beispiele mit Node. `test.model.py`: lässt sie gegen das echte Modell laufen und prüft den Weg |
 | `build.ps1` | Lädt die Runtime, baut die Exe und das Zip |
 | `THIRD_PARTY_LICENSES.md` | Mitgelieferte Komponenten und ihre Lizenzen |

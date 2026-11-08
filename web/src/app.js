@@ -256,7 +256,6 @@ function markBlock(blockId) {
 function describeSelection(blockId) {
     const selected = editor.getItem(blockId)
     let key = selected?.item.type ?? PLAN_TYPE
-    if (selected?.kind === 'loop') key = 'loop'
     if (selected?.kind === 'edge') key = selected.item.kind === 'use' ? 'use' : 'flow'
     if (key === 'use' && selected.item.port === 'workshop') key = 'use-workshop'
 

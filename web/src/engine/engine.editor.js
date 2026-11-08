@@ -3,8 +3,7 @@
 //   and an inspector with the puzzle inside the selected card.
 //   Owns the workspace model and draws it after every change.
 //
-//   const editor = new GraphEditor({ root, definitions, palette, planType, loops })
-//   loops: workspace => [{ id, from, to, label }], dashed arcs above the graph that are no edges (e.g. the chat loop)
+//   const editor = new GraphEditor({ root, definitions, palette, planType, bubble, flowMark })
 //   bubble: id => text, plain words shown in a speech bubble next to the selected card or line
 //   flowMark: '🗂️', a sign in the middle of every flow edge, it travels along when editor.travel() is called
 //   editor.on('change', workspace => ...)      // any change, also every key in a field
@@ -35,7 +34,6 @@ const BUBBLE_MARGIN_PX = 12
 const BUBBLE_ROOM_PX = 170
 const TRAVEL_DURATION_MS = 550
 const NEW_NODE_OFFSET_PX = 80
-const LOOP_DEPTH_PX = 90
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
 // ===========================================================================
@@ -81,7 +79,6 @@ export class GraphEditor {
     #definitions
     #palette
     #planType
-    #loops
     #bubble
     #closedBubbleId = null    // the selection whose bubble the user closed
     #flowMark
@@ -98,12 +95,11 @@ export class GraphEditor {
     #drag = null            // a piece, a new card or an edge on its way
     #fieldSnapshot = null   // workspace before the focused field changed
 
-    constructor({ root, definitions, palette, planType, loops = () => [], bubble = () => null, flowMark = null }) {
+    constructor({ root, definitions, palette, planType, bubble = () => null, flowMark = null }) {
         this.#root = root
         this.#definitions = new Map(definitions.map(definition => [definition.type, definition]))
         this.#palette = palette
         this.#planType = planType
-        this.#loops = loops
         this.#bubble = bubble
         this.#flowMark = flowMark
         this.#workspace = normalizeWorkspace(null, definitions, planType)
@@ -147,11 +143,9 @@ export class GraphEditor {
         this.#commit(null)
     }
 
-    // What an id stands for: a node card, an edge, a loop or a puzzle piece.
+    // What an id stands for: a node card, an edge or a puzzle piece.
     getItem(id) {
         if (null == id) return null
-        const loop = this.#loops(this.#workspace).find(candidate => candidate.id === id)
-        if (null != loop) return { kind: 'loop', item: loop }
         const edge = this.#workspace.edges.find(candidate => candidate.id === id)
         if (null != edge) return { kind: 'edge', item: edge }
         const block = findBlock(this.#workspace, id)?.block
@@ -206,8 +200,6 @@ export class GraphEditor {
             }
         }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity })
 
-        // Loops arch above the cards, they should be visible too.
-        if (this.#loops(this.#workspace).length > 0) bounds.top -= LOOP_DEPTH_PX
 
         const freeWidth = this.#elements.stage.clientWidth - this.#elements.inspector.offsetWidth - 2 * FIT_MARGIN_PX
         const freeHeight = this.#elements.stage.clientHeight - 2 * FIT_MARGIN_PX
@@ -237,7 +229,7 @@ export class GraphEditor {
 
     deleteSelected() {
         const selected = this.getItem(this.#selectedId)
-        if (null == selected || selected.kind === 'loop' || selected.item === this.#workspace.plan) return
+        if (null == selected || selected.item === this.#workspace.plan) return
 
         this.#history.record(this.#workspace)
         if (selected.kind === 'edge') {
@@ -442,31 +434,6 @@ export class GraphEditor {
         }
         this.#drawHandles()
         this.#drawBubble()
-
-        // Loops: dashed curves ABOVE all cards, from the top of one card back to another.
-        // Below the cards hang the resources with their use links, the loop stays out of their way.
-        const topOfAll = Math.min(...this.#workspace.nodes.map(node => node.y))
-        for (const loop of this.#loops(this.#workspace)) {
-            const fromCard = this.#findCard(loop.from)
-            const toCard = this.#findCard(loop.to)
-            if (null == fromCard || null == toCard) continue
-
-            const topOf = card => {
-                const rect = card.getBoundingClientRect()
-                return this.#toCanvas({ x: rect.left + rect.width / 2, y: rect.top })
-            }
-            const from = topOf(fromCard)
-            const to = topOf(toCard)
-            const height = topOfAll - LOOP_DEPTH_PX
-            const path = `M ${from.x} ${from.y} C ${from.x} ${height}, ${to.x} ${height}, ${to.x} ${to.y}`
-
-            // The middle of this curve sits at 3/4 of the way up to the control points.
-            const label = svgElement('text', { class: 'gl-loop-label', x: (from.x + to.x) / 2, y: (from.y + to.y + 6 * height) / 8 - 8 })
-            label.textContent = loop.label
-            const group = svgElement('g', { class: 'gl-edge-group gl-loop', 'data-edge-id': loop.id })
-            group.append(svgElement('path', { class: 'gl-edge-hit', d: path }), svgElement('path', { class: 'gl-edge', d: path }), label)
-            layer.append(group)
-        }
     }
 
     // The center of a port in canvas units, independent of pan and zoom.
