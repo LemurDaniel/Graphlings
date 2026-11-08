@@ -5,16 +5,17 @@
 //
 //   node tests/test.generator.mjs [OUTPUT_DIR]
 //
-//   Runs in German, then starts itself again with GRAPHLINGS_LANGUAGE=en for the English
-//   examples (the language is picked when the modules load, see web/src/i18n.js).
+//   Without GRAPHLINGS_LANGUAGE it starts itself once per language (de, en), because the
+//   language is picked when the modules load (see web/src/i18n.js) and Node would otherwise
+//   follow the locale of the machine: German here, English on a CI runner.
 //
 //   Exit code 1 when any check fails.
 
 //
 //   Chapters:
-//     CHECK EXAMPLES    Generates every example and checks the code.
-//     CHECK MIGRATION   Old graphs with tools at the agent load the new way.
-//     CHECK ENGLISH     The same checks with the English texts, in a second process.
+//     RUN ALL LANGUAGES   Without GRAPHLINGS_LANGUAGE: one child process per language.
+//     CHECK EXAMPLES      Generates every example and checks the code.
+//     CHECK MIGRATION     Old graphs with tools at the agent load the new way.
 //
 
 import { spawnSync } from 'node:child_process'
@@ -25,9 +26,32 @@ import { DEFINITIONS, migrateWorkspace, PLAN_TYPE, TYPES } from '../web/src/bloc
 import { normalizeWorkspace } from '../web/src/engine/engine.model.js'
 import { EXAMPLES } from '../web/src/examples.graph.js'
 import { generatePython } from '../web/src/generator.python.js'
-import { LANGUAGE } from '../web/src/i18n.js'
+import { LANGUAGE, LANGUAGES } from '../web/src/i18n.js'
 
 const outputDir = process.argv[2] ?? 'build'
+
+// ===========================================================================
+// =========================   RUN ALL LANGUAGES   ===========================
+// ===========================================================================
+//
+//   The language is fixed when the modules load, so one process checks one
+//   language. Without GRAPHLINGS_LANGUAGE this process only starts the children
+//   and reports their result, the checks below run in the children.
+//
+
+if (null == process.env.GRAPHLINGS_LANGUAGE) {
+    let hasFailed = false
+    for (const language of LANGUAGES) {
+        const child = spawnSync(process.execPath, [process.argv[1], outputDir], {
+            encoding: 'utf8',
+            env: { ...process.env, GRAPHLINGS_LANGUAGE: language },
+        })
+        process.stdout.write(child.stdout)
+        process.stderr.write(child.stderr)
+        hasFailed ||= child.status !== 0
+    }
+    process.exit(hasFailed ? 1 : 0)
+}
 const fileSuffix = LANGUAGE === 'de' ? '' : `.${LANGUAGE}`
 const python = process.env.PYTHON ?? 'python'
 
@@ -121,20 +145,6 @@ check(memoryLinks.length === 1 && memoryLinks[0].from === 'node-start' && memory
 check(toolLinks.length === 3 && toolLinks.every(edge => edge.from === 'node-workshop'), 'tool links not moved to the workshop')
 check(migrated.edges.some(edge => edge.from === 'node-helper' && edge.port === 'workshop' && edge.to === 'node-workshop'), 'agent not plugged into the workshop')
 check(generatePython(normalizeWorkspace(migrated, DEFINITIONS, PLAN_TYPE)).problems.length === 0, 'migrated graph has problems')
-
-// ===========================================================================
-// ==========================   CHECK ENGLISH   ==============================
-// ===========================================================================
-
-if (LANGUAGE === 'de') {
-    const english = spawnSync(process.execPath, [process.argv[1], outputDir], {
-        encoding: 'utf8',
-        env: { ...process.env, GRAPHLINGS_LANGUAGE: 'en' },
-    })
-    process.stdout.write(english.stdout)
-    process.stderr.write(english.stderr)
-    check(english.status === 0, 'the English run failed')
-}
 
 console.log(failures === 0 ? `OK (${LANGUAGE})` : `${failures} check(s) failed (${LANGUAGE})`)
 if (failures > 0) process.exitCode = 1
