@@ -56,6 +56,11 @@ CASES = [
     ("switch", "Wie installiere ich Python unter Windows? Kurz.", visits("techniker"), "geht zum Techniker"),
     ("switch", "Mir geht es heute nicht so gut.", visits("plauderer"), "geht zum Plauderer"),
     ("reflection", "Schreib einen Zweizeiler über Raketen.", visits("kritiker"), "der Kritiker liest mit"),
+    ("helpers", "Schreib ein Gedicht über den Mond.", visits("dichter"), "der Chef ruft den Dichter"),
+    ("helpers", "Übersetze ins Englische: Guten Morgen, wie geht es dir?", visits("uebersetzer"), "der Chef ruft den Übersetzer"),
+    ("helpers", "schreib ein Gedicht", visits("dichter"), "der Chef ruft den Dichter auch ohne Thema"),
+    ("helpers", "Hallo", avoids("team"), "der Chef grüßt selbst"),
+    ("helpers", "Hallo, wer bist du?", avoids("team"), "der Chef antwortet selbst"),
 ]
 
 

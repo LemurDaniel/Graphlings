@@ -20,6 +20,7 @@ import io
 import logging
 import runpy
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -31,7 +32,8 @@ import os  # noqa: F401
 import urllib.error
 import urllib.request  # noqa: F401
 
-ANSWER_PREFIX = "KI: "
+# The generated code prints this before every answer, in German or English.
+ANSWER_PREFIXES = ("KI: ", "AI: ")
 # A chat graph has stream_answer, a task graph run_task.
 RUN_NAMES = ("stream_answer", "run_task")
 
@@ -48,7 +50,7 @@ logger = logging.getLogger("graphlings.runner")
 
 class ChunkWriter(io.TextIOBase):
     """
-    Hands every printed chunk to a callback, without the 'KI: ' prefix of the terminal.
+    Hands every printed chunk to a callback, without the 'KI: ' or 'AI: ' prefix of the terminal.
     """
 
     def __init__(self, on_chunk: Callable[[str], None]) -> None:
@@ -63,7 +65,7 @@ class ChunkWriter(io.TextIOBase):
 
     def write(self, text: str) -> int:
         # The terminal prefix only makes sense in the terminal.
-        if self._is_first and text == ANSWER_PREFIX:
+        if self._is_first and text in ANSWER_PREFIXES:
             self._is_first = False
             return len(text)
 
@@ -94,6 +96,7 @@ class GraphRunner:
         self._namespace: dict | None = None
         self._thread_id = ""
         self._on_node: Callable[[str, str], None] | None = None   # set while ask runs
+        self._step_delay_s = 0.0                                  # slow mode: pause before every step
 
     def load(self, code: str) -> None:
         """
@@ -118,24 +121,44 @@ class GraphRunner:
         for name, function in list(nodes.items()):
             nodes[name] = self._watch_node(name, function)
 
+        # The toolboxes (<WORKSHOP>_TOOLS) too: tools and helper agents light up while they run.
+        for dict_name, toolbox in list(namespace.items()):
+            if not dict_name.endswith("_TOOLS") or not isinstance(toolbox, dict):
+                continue
+            for name, function in list(toolbox.items()):
+                toolbox[name] = self._watch_node(name, function)
+
         with self._lock:
             self._namespace = namespace
         self.reset()
         logger.debug(f"[GraphRunner] Loaded {code_file}.")
 
-    def _watch_node(self, name: str, function: Callable[[dict], dict]) -> Callable[[dict], dict]:
+    def set_step_delay(self, seconds: float) -> None:
         """
-        :param name:     (Required) The node name, a key of NODES.
-        :param function: (Required) The node function of the generated code.
+        Slow mode: every node, tool and helper waits this long after it lit up, before it works.
+        So the window can show where the notepad is and who is about to act.
+
+        :param seconds: (Required) The pause, 0 for full speed.
+        """
+        self._step_delay_s = max(0.0, float(seconds))
+        logger.debug(f"[GraphRunner] Step delay {self._step_delay_s}s.")
+
+    def _watch_node(self, name: str, function: Callable[..., object]) -> Callable[..., object]:
+        """
+        :param name:     (Required) The node or tool name, a key of NODES or of a toolbox.
+        :param function: (Required) The node or tool function of the generated code.
         :returns:        The same function, reporting 'running' before and 'done' after.
         """
-        def watched(state: dict) -> dict:
+        def watched(*args: object, **kwargs: object) -> object:
             if self._on_node:
                 self._on_node(name, "running")
-            changes = function(state)
+            # Slow mode: the card glows and the notepad arrives before the step does its work.
+            if self._step_delay_s > 0:
+                time.sleep(self._step_delay_s)
+            result = function(*args, **kwargs)
             if self._on_node:
                 self._on_node(name, "done")
-            return changes
+            return result
 
         return watched
 

@@ -16,19 +16,20 @@
 <body class="is-code-hidden">
     <header class="topbar">
         <div class="brand">
-            <span class="mascot" aria-hidden="true">🐣</span>
+            <span id="mascot" class="mascot" aria-hidden="true"></span>
             <h1>Graphlings</h1>
-            <span class="tagline">Agents und Graphen zum Zusammenstecken</span>
+            <span class="tagline" data-text="ui.tagline">Agents und Graphen zum Zusammenstecken</span>
         </div>
         <div class="actions">
-            <select id="example-select" class="example-select" title="Ein Beispiel-Graph zu jedem Muster">
-                <option value="">🧩 Beispiel laden …</option>
+            <select id="example-select" class="example-select" data-title="ui.example.title">
+                <option value="" data-text="ui.example.placeholder">🧩 Beispiel laden …</option>
             </select>
-            <button id="button-clear" type="button">🧹 Leeren</button>
-            <button id="button-code" type="button" title="Den Python-Code zum Graphen zeigen">🐍 Code zeigen</button>
-            <button id="button-copy" type="button">📋 Code kopieren</button>
-            <button id="button-save" type="button">💾 chat.py speichern</button>
-            <button id="button-theme" type="button" title="Hell oder dunkel">🌙 Dunkel</button>
+            <button id="button-clear" type="button" data-text="ui.clear">🧹 Leeren</button>
+            <button id="button-code" type="button" data-title="ui.code.title">🐍 Code zeigen</button>
+            <button id="button-copy" type="button" data-text="ui.copy">📋 Code kopieren</button>
+            <button id="button-save" type="button" data-text="ui.save">💾 chat.py speichern</button>
+            <button id="button-theme" type="button" data-title="ui.theme.title">🌙 Dunkel</button>
+            <button id="button-language" type="button" data-title="ui.language.title" data-text="ui.language.switch">🌐 English</button>
         </div>
     </header>
 
@@ -36,7 +37,7 @@
         <section id="blocks" class="panel blocks" aria-label="Graph"></section>
 
         <section class="panel code">
-            <div class="panel-title">🐍 Python <span id="code-hint" class="muted">Klick auf eine Karte markiert ihre Zeilen</span></div>
+            <div class="panel-title">🐍 Python <span id="code-hint" class="muted" data-text="ui.code.hint">Klick auf eine Karte markiert ihre Zeilen</span></div>
             <p id="explain-code" class="explain-code"></p>
             <pre id="code" class="code-view" tabindex="0"></pre>
         </section>
@@ -44,22 +45,38 @@
 
     <!-- Start button and chat, floating at the bottom right -->
     <div class="dock">
-        <section id="chat" class="chat-popup" hidden aria-label="Ausprobieren">
+        <section id="chat" class="chat-popup" hidden data-aria-label="ui.chat.label">
             <div class="panel-title">
                 <span id="chat-title">💬 Ausprobieren</span>
-                <span id="model-status" class="status status-starting">Modell startet …</span>
-                <button id="button-reset" type="button" class="icon-button" disabled title="Neues Gespräch, neue thread_id">🔄</button>
-                <button id="button-chat-close" type="button" class="icon-button" title="Schließen">✕</button>
+                <span id="model-status" class="status status-starting"></span>
+                <button id="button-reset" type="button" class="icon-button" disabled data-title="ui.reset.title">🔄</button>
+                <button id="button-chat-close" type="button" class="icon-button" data-title="editor.close">✕</button>
             </div>
             <ul id="problems" class="problems"></ul>
             <div id="chat-log" class="chat-log" aria-live="polite"></div>
+            <label class="chat-speed" data-title="ui.speed.title">
+                <span>🐢</span>
+                <input id="speed-slider" type="range" min="0" max="3000" step="500" value="0">
+                <span id="speed-label"></span>
+            </label>
             <form id="chat-form" class="chat-form">
-                <input id="chat-input" type="text" placeholder="Erst den Graphen starten …" autocomplete="off" disabled>
+                <input id="chat-input" type="text" autocomplete="off" disabled>
                 <button id="button-send" type="submit" disabled>Senden</button>
             </form>
         </section>
         <button id="button-start" type="button" class="start-button">▶️ Graph starten</button>
     </div>
+
+    <!-- Own confirm dialog: native confirm() is blocked in some embedded browsers -->
+    <dialog id="confirm-dialog" class="confirm">
+        <form method="dialog">
+            <p id="confirm-text"></p>
+            <div class="confirm-buttons">
+                <button type="submit" value="cancel" data-text="ui.confirm.no">Abbrechen</button>
+                <button type="submit" value="ok" class="confirm-ok" data-text="ui.confirm.yes" autofocus>Ja</button>
+            </div>
+        </form>
+    </dialog>
 
     <script type="module" src="src/app.js"></script>
 </body>

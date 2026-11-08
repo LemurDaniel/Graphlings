@@ -11,6 +11,7 @@
 //
 
 import { PLAN_TYPE, TYPES } from './blocks.graph.js'
+import { t } from './i18n.js'
 import { MODEL_VERSION } from './engine/engine.model.js'
 
 // ===========================================================================
@@ -44,7 +45,8 @@ const qwen = (x, y, temperature = 0.7) => card('model-qwen', TYPES.model, x, y, 
 //   2. Smart switch    The model reads the question and picks a specialist.
 //   3. Tool agent      The agent loop: model, tool call, workshop, back to the model.
 //   4. Reflection      A writer and a critic loop until the critic says OK, as a task.
-//   5. List            All examples for the example menu.
+//   5. Helpers         A boss delegates to helper agents in the workshop: agents as tools.
+//   6. List            All examples for the example menu.
 //
 
 // ---------------------------------------------------------------------------
@@ -54,31 +56,31 @@ const qwen = (x, y, temperature = 0.7) => card('model-qwen', TYPES.model, x, y, 
 
 //   START -> chat -> zu_lang --ja--> summarize -> END
 //                            \--nein---------------> END
+//
+//   The summarizer sits above the line, so the 'nein' way runs straight to END.
 export const EXAMPLE_CHAT = {
     version: MODEL_VERSION,
     plan: { ...plan('chat'), slots: { SETUP: [piece('settings', TYPES.settings)] } },
     nodes: [
-        card('node-start', TYPES.start, 30, 150),
-        card('node-chat', TYPES.agent, 230, 110, {
-            NAME: 'chat',
-            PROMPT: 'Du bist ein hilfreicher Assistent. Antworte auf Deutsch, klar und präzise.',
+        card('node-start', TYPES.start, 10, 108),
+        card('node-chat', TYPES.agent, 330, 60, {
+            NAME: t('example.chat.agent.name'),
+            PROMPT: t('card.agent.prompt.default'),
             SHOW: true,
             USE_SUMMARY: true,
         }),
-        card('node-router', TYPES.router, 520, 100, { NAME: 'zu_lang' }, {
+        card('node-router', TYPES.router, 600, 52, { NAME: t('example.chat.router.name') }, {
             CONDITION: [piece('condition-length', TYPES.conditionLength, { MAX: 20 })],
         }),
-        card('node-summarize', TYPES.summarize, 800, 20, {
-            NAME: 'summarize',
+        card('node-summarize', TYPES.summarize, 850, -80, {
+            NAME: t('example.chat.summarize.name'),
             KEEP_LAST: 6,
-            PROMPT: 'Fasse das bisherige Gespräch knapp auf Deutsch zusammen. '
-                + 'Behalte Fakten über den Nutzer, getroffene Entscheidungen '
-                + 'und offene Fragen. Antworte nur mit der Zusammenfassung.',
+            PROMPT: t('example.chat.summarize.prompt'),
         }),
-        card('node-end', TYPES.end, 860, 280),
-        qwen(620, 470),
-        notepad(-20, 470, ['summary']),
-        card('memory', TYPES.memory, 250, 470),
+        card('node-end', TYPES.end, 1120, 115),
+        qwen(800, 320),
+        notepad(50, 320, ['summary']),
+        card('memory', TYPES.memory, 150, 440),
     ],
     edges: [
         flow('edge-start', 'node-start', 'out', 'node-chat'),
@@ -89,7 +91,7 @@ export const EXAMPLE_CHAT = {
         use('use-chat-model', 'node-chat', 'model', 'model-qwen'),
         use('use-summarize-model', 'node-summarize', 'model', 'model-qwen'),
         use('use-start-state', 'node-start', 'state', 'state'),
-        use('use-chat-memory', 'node-chat', 'memory', 'memory'),
+        use('use-start-memory', 'node-start', 'memory', 'memory'),
     ],
 }
 
@@ -104,29 +106,29 @@ const EXAMPLE_SWITCH = {
     version: MODEL_VERSION,
     plan: plan('chat'),
     nodes: [
-        card('node-start', TYPES.start, 30, 170),
-        card('node-switch', TYPES.router, 230, 140, { NAME: 'absicht' }, {
+        card('node-start', TYPES.start, 10, 108),
+        card('node-switch', TYPES.router, 330, 52, { NAME: t('example.switch.router.name') }, {
             CONDITION: [piece('condition-model', TYPES.conditionModel, {}, {
                 OPTIONS: [
-                    piece('way-technik', TYPES.routeOption, { NAME: 'technik', HINT: 'Fragen zu Technik, Computern und Programmieren' }),
-                    piece('way-alltag', TYPES.routeOption, { NAME: 'alltag', HINT: 'alles andere: Alltag, Gefühle, Smalltalk' }),
+                    piece('way-technik', TYPES.routeOption, { NAME: t('example.switch.way.tech.name'), HINT: t('example.switch.way.tech.hint') }),
+                    piece('way-alltag', TYPES.routeOption, { NAME: t('example.switch.way.talk.name'), HINT: t('example.switch.way.talk.hint') }),
                 ],
             })],
         }),
-        card('node-tech', TYPES.agent, 560, 40, {
-            NAME: 'techniker',
-            PROMPT: 'Du bist ein geduldiger Technik-Experte. Erkläre Schritt für Schritt auf Deutsch, mit einem kleinen Beispiel.',
+        card('node-tech', TYPES.agent, 600, -60, {
+            NAME: t('example.switch.tech.name'),
+            PROMPT: t('example.switch.tech.prompt'),
             SHOW: true,
         }),
-        card('node-talk', TYPES.agent, 560, 280, {
-            NAME: 'plauderer',
-            PROMPT: 'Du bist ein freundlicher Gesprächspartner. Antworte locker, kurz und herzlich auf Deutsch.',
+        card('node-talk', TYPES.agent, 600, 180, {
+            NAME: t('example.switch.talk.name'),
+            PROMPT: t('example.switch.talk.prompt'),
             SHOW: true,
         }),
-        card('node-end', TYPES.end, 880, 180),
-        qwen(380, 500, 0.3),
-        notepad(-20, 470),
-        card('memory', TYPES.memory, 760, 500),
+        card('node-end', TYPES.end, 880, 115),
+        qwen(340, 380, 0.3),
+        notepad(50, 320),
+        card('memory', TYPES.memory, 150, 440),
     ],
     edges: [
         flow('edge-start', 'node-start', 'out', 'node-switch'),
@@ -137,9 +139,8 @@ const EXAMPLE_SWITCH = {
         use('use-switch-model', 'node-switch', 'model', 'model-qwen'),
         use('use-tech-model', 'node-tech', 'model', 'model-qwen'),
         use('use-talk-model', 'node-talk', 'model', 'model-qwen'),
-        use('use-tech-memory', 'node-tech', 'memory', 'memory'),
-        use('use-talk-memory', 'node-talk', 'memory', 'memory'),
         use('use-start-state', 'node-start', 'state', 'state'),
+        use('use-start-memory', 'node-start', 'memory', 'memory'),
     ],
 }
 
@@ -158,41 +159,37 @@ const EXAMPLE_TOOLS = {
     version: MODEL_VERSION,
     plan: plan('chat', 12),
     nodes: [
-        card('node-start', TYPES.start, 30, 160),
-        card('node-helper', TYPES.agent, 240, 120, {
-            NAME: 'helfer',
-            PROMPT: 'You are a helpful assistant with tools. Rules: '
-                + 'Question about time, date or weekday: call clock. '
-                + 'Any calculation: call calculator, never calculate yourself. '
-                + 'Rolling a dice: call dice. '
-                + 'Only when the tool result is there, answer briefly in German.',
+        card('node-start', TYPES.start, 10, 108),
+        card('node-helper', TYPES.agent, 330, 60, {
+            NAME: t('example.tools.agent.name'),
+            PROMPT: t('example.tools.agent.prompt'),
             SHOW: true,
         }),
-        card('node-switch', TYPES.router, 540, 120, { NAME: 'will_werkzeug' }, {
+        card('node-switch', TYPES.router, 600, 52, { NAME: t('example.tools.router.name') }, {
             CONDITION: [piece('condition-tools', TYPES.conditionTools)],
         }),
-        card('node-end', TYPES.end, 1080, 170),
-        card('node-workshop', TYPES.workshop, 820, 330, { NAME: 'werkstatt' }),
-        card('tool-calculator', TYPES.tool, 640, 540, { TOOL: 'calculator' }),
-        card('tool-clock', TYPES.tool, 830, 540, { TOOL: 'clock' }),
-        card('tool-dice', TYPES.tool, 1020, 540, { TOOL: 'dice' }),
-        qwen(260, 400, 0.2),
-        notepad(-60, 400),
-        card('memory', TYPES.memory, 40, 540),
+        card('node-end', TYPES.end, 1100, 115),
+        card('node-workshop', TYPES.workshop, 600, 320, { NAME: t('example.tools.workshop.name') }),
+        card('tool-calculator', TYPES.tool, 420, 540, { TOOL: 'calculator' }),
+        card('tool-clock', TYPES.tool, 600, 540, { TOOL: 'clock' }),
+        card('tool-dice', TYPES.tool, 780, 540, { TOOL: 'dice' }),
+        qwen(340, 320, 0.2),
+        notepad(50, 320),
+        card('memory', TYPES.memory, 100, 440),
     ],
     edges: [
         flow('edge-start', 'node-start', 'out', 'node-helper'),
         flow('edge-helper', 'node-helper', 'out', 'node-switch'),
-        flow('edge-yes', 'node-switch', 'then', 'node-workshop'),
+        { ...flow('edge-yes', 'node-switch', 'then', 'node-workshop'), points: [{ x: 810, y: 147 }, { x: 810, y: 280 }, { x: 560, y: 280 }, { x: 560, y: 391 }] },
         flow('edge-no', 'node-switch', 'else', 'node-end'),
-        { ...flow('edge-back', 'node-workshop', 'out', 'node-helper'), points: [{ x: 1060, y: 370 }, { x: 1060, y: 60 }, { x: 200, y: 60 }, { x: 200, y: 170 }] },
+        { ...flow('edge-back', 'node-workshop', 'out', 'node-helper'), points: [{ x: 800, y: 391 }, { x: 800, y: 490 }, { x: 300, y: 490 }, { x: 300, y: 142 }] },
         use('use-helper-model', 'node-helper', 'model', 'model-qwen'),
-        use('use-helper-memory', 'node-helper', 'memory', 'memory'),
         use('use-helper-workshop', 'node-helper', 'workshop', 'node-workshop'),
         use('use-tool-calculator', 'node-workshop', 'tools', 'tool-calculator'),
         use('use-tool-clock', 'node-workshop', 'tools', 'tool-clock'),
         use('use-tool-dice', 'node-workshop', 'tools', 'tool-dice'),
         use('use-start-state', 'node-start', 'state', 'state'),
+        use('use-start-memory', 'node-start', 'memory', 'memory'),
     ],
 }
 
@@ -207,36 +204,95 @@ const EXAMPLE_REFLECTION = {
     version: MODEL_VERSION,
     plan: plan('task', 8),
     nodes: [
-        card('node-start', TYPES.start, 30, 170),
-        card('node-writer', TYPES.agent, 220, 130, {
-            NAME: 'schreiber',
-            PROMPT: 'Du bist ein Autor. Schreibe zur Aufgabe einen sehr kurzen Text auf Deutsch, höchstens vier Zeilen. '
-                + 'Kommt danach Kritik, schreibe den ganzen Text verbessert neu.',
+        card('node-start', TYPES.start, 10, 108),
+        card('node-writer', TYPES.agent, 330, 60, {
+            NAME: t('example.reflection.writer.name'),
+            PROMPT: t('example.reflection.writer.prompt'),
             SHOW: true,
         }),
-        card('node-critic', TYPES.agent, 500, 130, {
-            NAME: 'kritiker',
-            PROMPT: 'Du bist ein strenger, aber fairer Lektor. Prüfe den letzten Text. '
-                + 'Ist er gut, antworte nur mit OK. Sonst nenne in einem Satz, was besser werden muss.',
+        card('node-critic', TYPES.agent, 600, 60, {
+            NAME: t('example.reflection.critic.name'),
+            PROMPT: t('example.reflection.critic.prompt'),
             SHOW: true,
         }),
-        card('node-switch', TYPES.router, 780, 130, { NAME: 'gut_genug' }, {
+        card('node-switch', TYPES.router, 870, 52, { NAME: t('example.reflection.router.name') }, {
             CONDITION: [piece('condition-ok', TYPES.conditionContains, { WORD: 'OK' })],
         }),
-        card('node-end', TYPES.end, 1060, 170),
-        qwen(260, 470, 0.7),
-        card('model-critic', TYPES.model, 520, 470, { NAME: 'streng', MODE: 'builtin', TEMPERATURE: 0.2 }),
-        notepad(-20, 470),
+        card('node-end', TYPES.end, 1120, 115),
+        qwen(330, 320, 0.7),
+        card('model-critic', TYPES.model, 600, 320, { NAME: t('example.reflection.critic.model'), MODE: 'builtin', TEMPERATURE: 0.2 }),
+        notepad(50, 320),
     ],
     edges: [
         flow('edge-start', 'node-start', 'out', 'node-writer'),
         flow('edge-write', 'node-writer', 'out', 'node-critic'),
         flow('edge-check', 'node-critic', 'out', 'node-switch'),
         flow('edge-ok', 'node-switch', 'then', 'node-end'),
-        { ...flow('edge-again', 'node-switch', 'else', 'node-writer'), points: [{ x: 1000, y: 60 }, { x: 160, y: 60 }, { x: 160, y: 190 }] },
+        { ...flow('edge-again', 'node-switch', 'else', 'node-writer'), points: [{ x: 1080, y: 177 }, { x: 1080, y: 275 }, { x: 300, y: 275 }, { x: 300, y: 142 }] },
         use('use-writer-model', 'node-writer', 'model', 'model-qwen'),
         use('use-critic-model', 'node-critic', 'model', 'model-critic'),
         use('use-start-state', 'node-start', 'state', 'state'),
+    ],
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+//   A boss delegates to helper agents in the workshop: agents as tools.
+// ---------------------------------------------------------------------------
+
+//   START -> chef -> will_hilfe --ja--> team -> chef (loop)
+//                              \--nein--> END
+//
+//   The helper agents hang in the workshop like tools. Each works on its own notepad:
+//   it gets only the task and returns only its answer. Each has its own model too:
+//   the poet a creative one (hot), the translator a precise one (cold), the boss keeps qwen.
+const EXAMPLE_HELPERS = {
+    version: MODEL_VERSION,
+    plan: plan('chat', 12),
+    nodes: [
+        card('node-start', TYPES.start, 10, 108),
+        card('node-boss', TYPES.agent, 330, 60, {
+            NAME: t('example.helpers.boss.name'),
+            PROMPT: t('example.helpers.boss.prompt'),
+            SHOW: true,
+        }),
+        card('node-switch', TYPES.router, 600, 52, { NAME: t('example.helpers.router.name') }, {
+            CONDITION: [piece('condition-tools', TYPES.conditionTools)],
+        }),
+        card('node-end', TYPES.end, 1100, 115),
+        card('node-workshop', TYPES.workshop, 600, 320, { NAME: t('example.helpers.workshop.name') }),
+        card('helper-poet', TYPES.helper, 360, 580, {
+            NAME: t('example.helpers.poet.name'),
+            PROMPT: t('card.helper.prompt.default'),
+            HINT: t('example.helpers.poet.hint'),
+            SHOW: true,
+        }),
+        card('helper-translator', TYPES.helper, 640, 580, {
+            NAME: t('example.helpers.translator.name'),
+            PROMPT: t('example.helpers.translator.prompt'),
+            HINT: t('example.helpers.translator.hint'),
+            SHOW: true,
+        }),
+        qwen(340, 320, 0.2),
+        card('model-poet', TYPES.model, 350, 790, { NAME: t('example.helpers.poet.model'), MODE: 'builtin', TEMPERATURE: 0.9 }),
+        card('model-translator', TYPES.model, 630, 790, { NAME: t('example.helpers.translator.model'), MODE: 'builtin', TEMPERATURE: 0.1 }),
+        notepad(50, 320),
+        card('memory', TYPES.memory, 100, 440),
+    ],
+    edges: [
+        flow('edge-start', 'node-start', 'out', 'node-boss'),
+        flow('edge-boss', 'node-boss', 'out', 'node-switch'),
+        { ...flow('edge-yes', 'node-switch', 'then', 'node-workshop'), points: [{ x: 810, y: 147 }, { x: 810, y: 280 }, { x: 560, y: 280 }, { x: 560, y: 391 }] },
+        flow('edge-no', 'node-switch', 'else', 'node-end'),
+        { ...flow('edge-back', 'node-workshop', 'out', 'node-boss'), points: [{ x: 800, y: 391 }, { x: 800, y: 490 }, { x: 300, y: 490 }, { x: 300, y: 142 }] },
+        use('use-boss-model', 'node-boss', 'model', 'model-qwen'),
+        use('use-boss-workshop', 'node-boss', 'workshop', 'node-workshop'),
+        use('use-team-poet', 'node-workshop', 'tools', 'helper-poet'),
+        use('use-team-translator', 'node-workshop', 'tools', 'helper-translator'),
+        use('use-poet-model', 'helper-poet', 'model', 'model-poet'),
+        use('use-translator-model', 'helper-translator', 'model', 'model-translator'),
+        use('use-start-state', 'node-start', 'state', 'state'),
+        use('use-start-memory', 'node-start', 'memory', 'memory'),
     ],
 }
 
@@ -246,8 +302,9 @@ const EXAMPLE_REFLECTION = {
 // ---------------------------------------------------------------------------
 
 export const EXAMPLES = [
-    { id: 'chat', label: '💬 Chat mit Zusammenfassung', workspace: EXAMPLE_CHAT },
-    { id: 'switch', label: '🔀 Schlaue Weiche + Spezialisten', workspace: EXAMPLE_SWITCH },
-    { id: 'tools', label: '🔧 Werkzeug-Agent', workspace: EXAMPLE_TOOLS },
-    { id: 'reflection', label: '🔁 Reflexion (Aufgabe)', workspace: EXAMPLE_REFLECTION },
+    { id: 'chat', label: t('example.chat.label'), workspace: EXAMPLE_CHAT },
+    { id: 'switch', label: t('example.switch.label'), workspace: EXAMPLE_SWITCH },
+    { id: 'tools', label: t('example.tools.label'), workspace: EXAMPLE_TOOLS },
+    { id: 'reflection', label: t('example.reflection.label'), workspace: EXAMPLE_REFLECTION },
+    { id: 'helpers', label: t('example.helpers.label'), workspace: EXAMPLE_HELPERS },
 ]

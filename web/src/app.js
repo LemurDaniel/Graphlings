@@ -7,31 +7,31 @@
 //
 //   Chapters:
 //     HELPERS             HTML escaping and a small Python highlighter.
-//     SET UP WORKSPACE    Theme, toolbox and the saved or example blocks.
+//     SET UP WORKSPACE    Language, theme, toolbox and the saved or example blocks.
 //     SHOW CODE           Renders the code, marks lines, explains blocks.
-//     CHAT WITH GRAPH     Model status, start, ask and reset via the Python bridge.
-//     BUTTONS             Example, clear, copy, save and the light or dark theme.
+//     CHAT WITH GRAPH     Model status, start, ask and reset via the Python bridge
+//                         (pywebview in the app, /api/* of app/dev_server.py in the browser).
+//     BUTTONS             Example, clear, copy, save, the light or dark theme and the language.
 //
 
 import { DEFINITIONS, getDescription, getExplanation, migrateWorkspace, PALETTE, PLAN_TYPE, TYPES } from './blocks.graph.js'
 import { GraphEditor } from './engine/engine.editor.js'
 import { EXAMPLES } from './examples.graph.js'
 import { generatePython } from './generator.python.js'
+import { LANGUAGE, LANGUAGE_KEY, t } from './i18n.js'
+import { MASCOT } from './monsters.graph.js'
+import { startMonsterLife } from './monsters.live.js'
 
 
 const STORAGE_KEY = 'graphlings.workspace.v3'
 const THEME_KEY = 'graphlings.theme'
 const CODE_KEY = 'graphlings.code-visible'
-const EDGE_EXPLANATION = 'Eine Kante ist ein Eintrag in EDGES: Nach diesem Knoten läuft immer der nächste. '
-    + 'Führt sie in eine Weiche, steht in EDGES statt eines Namens die Routing-Funktion der Weiche. '
-    + 'Von jedem Ausgang geht genau ein Weg weg, sonst wüsste die Engine nicht, wohin.'
-const USE_EXPLANATION = 'Eine gepunktete Linie ist kein Schritt im Ablauf, sondern heißt "benutzt": '
-    + 'Ein Agent ruft sein Modell auf, wenn er läuft, im Code als erstes Argument von ask_model(). '
-    + 'START benutzt State und Gedächtnis, um eine Runde zu beginnen. Eine Ressource kann von vielen benutzt werden.'
-const WORKSHOP_EXPLANATION = 'Die Steckdose zwischen Agent und Werkstatt ist im Code tools=list_tools(...): '
-    + 'Der Agent holt sich die Beschreibungen der Werkzeuge und gibt sie seinem Modell mit. '
-    + 'Das ist die Idee von MCP (Model Context Protocol): list_tools entspricht tools/list, call_tool entspricht tools/call. '
-    + 'Bei echtem MCP läuft die Werkstatt als eigenes Programm, hier steht sie in derselben Datei.'
+const SPEED_KEY = 'graphlings.step-delay-ms'
+const TRAVEL_SHARE = 0.7          // the notepad travels this share of the pause, then the step works
+const TRAVEL_MIN_MS = 550
+const EDGE_EXPLANATION = t('describe.edge.code')
+const USE_EXPLANATION = t('describe.use.code')
+const WORKSHOP_EXPLANATION = t('describe.useWorkshop.code')
 const STATUS_POLL_MS = 1000
 
 const PYTHON_KEYWORDS = new Set([
@@ -54,6 +54,8 @@ const elements = {
     chatInput: document.getElementById('chat-input'),
     buttonStart: document.getElementById('button-start'),
     buttonSend: document.getElementById('button-send'),
+    speedSlider: document.getElementById('speed-slider'),
+    speedLabel: document.getElementById('speed-label'),
     buttonReset: document.getElementById('button-reset'),
     exampleSelect: document.getElementById('example-select'),
     buttonClear: document.getElementById('button-clear'),
@@ -71,6 +73,7 @@ const elements = {
 //   highlightLine     Colours one line of Python, docstrings span several lines.
 //   readStorage       localStorage that never throws.
 //   writeStorage      localStorage that never throws.
+//   askConfirm        An own yes/no dialog, native confirm() is blocked in some embedded browsers.
 //
 
 function escapeHtml(text) {
@@ -145,6 +148,25 @@ function writeStorage(key, value) {
     }
 }
 
+/**
+ * Asks a yes/no question in the own dialog of index.html.
+ *
+ * @param {string} message   (Required) The question.
+ * @returns {Promise<boolean>} true when the user confirmed.
+ *
+ * @example
+ * if (!await askConfirm(t('ui.clear.confirm'))) return
+ */
+function askConfirm(message) {
+    const dialog = document.getElementById('confirm-dialog')
+    document.getElementById('confirm-text').textContent = message
+    return new Promise(resolve => {
+        dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok'), { once: true })
+        dialog.returnValue = 'cancel'
+        dialog.showModal()
+    })
+}
+
 // ===========================================================================
 // ==========================   SET UP WORKSPACE   ===========================
 // ===========================================================================
@@ -172,6 +194,10 @@ const editor = new GraphEditor({
     flowMark: '🗂️',
 })
 let selectedId = null       // set by the 'select' event of the editor, read in SHOW CODE
+
+// The monsters on the cards and the mascot: eyes follow the pointer, they throw and catch
+// the notepad, do tricks when clicked. Pure decoration, see monsters.live.js.
+startMonsterLife({ stage: document.body, editor })
 
 // ---------------------------------------------------------------------------
 // Workspace
@@ -323,10 +349,10 @@ let isBusy = false
 // ---------------------------------------------------------------------------
 
 const STATUS_TEXT = {
-    starting: '⏳ Modell startet …',
-    ready: '🟢 Modell bereit',
-    missing: '⚠️ Modell fehlt',
-    failed: '⛔ Modell-Fehler',
+    starting: t('ui.status.starting'),
+    ready: t('ui.status.ready'),
+    missing: t('ui.status.missing'),
+    failed: t('ui.status.failed'),
 }
 
 function setStatus(state, message) {
@@ -345,15 +371,105 @@ async function pollStatus() {
     if (state !== 'ready') addBubble('error', message)
 }
 
-function connectBridge() {
+// In a plain browser app/dev_server.py offers the same calls under /api/*. Answers stream
+// as server-sent events: 'chunk' and 'node' go to window.graphlings, 'done' ends the call.
+class BrowserBridge {
+    async model_status() {
+        return (await fetch('/api/model_status')).json()
+    }
+
+    start_graph(code) {
+        return this.#post('/api/start_graph', { code })
+    }
+
+    reset() {
+        return this.#post('/api/reset', {})
+    }
+
+    set_step_delay(seconds) {
+        return this.#post('/api/set_step_delay', { seconds })
+    }
+
+    async ask(question) {
+        const response = await fetch('/api/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question }),
+        })
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let result = { ok: false, error: 'Die Antwort kam nicht zu Ende.' }
+
+        // Events are separated by an empty line: 'event: chunk' then 'data: {...}'.
+        while (true) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const blocks = buffer.split('\n\n')
+            buffer = blocks.pop()
+            for (const block of blocks) {
+                const event = block.match(/^event: (.*)$/m)?.[1]
+                const data = JSON.parse(block.match(/^data: (.*)$/m)?.[1] ?? '{}')
+                if (event === 'chunk') window.graphlings.onChunk(data.text)
+                if (event === 'node') window.graphlings.onNode(data.name, data.status)
+                if (event === 'done') result = data
+            }
+        }
+        return result
+    }
+
+    async #post(path, body) {
+        const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        return response.json()
+    }
+}
+
+// Order of precedence: the app (pywebview) > the dev server (/api) > no model, build only.
+async function connectBridge() {
     api = window.pywebview?.api ?? null
-    if (null == api) return
+    if (null == api && await hasDevServer()) api = new BrowserBridge()
+    if (null == api) return setStatus('missing', t('ui.status.browser'))
     pollStatus().catch(exception => setStatus('failed', exception.message))
+    applySpeed(readSpeed())
+}
+
+async function hasDevServer() {
+    try {
+        return (await fetch('/api/model_status')).ok
+    } catch {
+        return false
+    }
 }
 
 window.addEventListener('pywebviewready', connectBridge)
-if (null != window.pywebview?.api) connectBridge()
-else setStatus('missing', 'Nur in der App: Hier im Browser läuft kein Modell.')
+connectBridge()
+
+// ---------------------------------------------------------------------------
+// Speed
+//   Slow mode: a pause before every step in Python, the notepad travels accordingly.
+// ---------------------------------------------------------------------------
+
+function readSpeed() {
+    const saved = Number(readStorage(SPEED_KEY))
+    return Number.isFinite(saved) ? saved : 0
+}
+
+// The pause goes to the runner, the travel time to the editor, the label to the user.
+function applySpeed(delayMs) {
+    elements.speedSlider.value = String(delayMs)
+    elements.speedLabel.textContent = delayMs === 0
+        ? t('ui.speed.fast')
+        : t('ui.speed.step', { seconds: (delayMs / 1000).toLocaleString(LANGUAGE, { maximumFractionDigits: 1 }) })
+    editor.setTravelDuration(Math.max(TRAVEL_MIN_MS, delayMs * TRAVEL_SHARE))
+    api?.set_step_delay?.(delayMs / 1000)
+}
+
+elements.speedSlider.addEventListener('input', () => {
+    const delayMs = Number(elements.speedSlider.value)
+    writeStorage(SPEED_KEY, String(delayMs))
+    applySpeed(delayMs)
+})
 
 // ---------------------------------------------------------------------------
 // Bubbles
@@ -375,7 +491,7 @@ function addNotepad(state) {
     const details = document.createElement('details')
     details.className = 'notepad'
     const summary = document.createElement('summary')
-    summary.textContent = `🗂️ Notizzettel am Ende (${state.messages?.length ?? 0} Nachrichten)`
+    summary.textContent = t('ui.notepad.end', { count: state.messages?.length ?? 0 })
     const content = document.createElement('pre')
     content.textContent = JSON.stringify(state, null, 2)
     details.append(summary, content)
@@ -389,21 +505,21 @@ function updateChatControls() {
     elements.buttonSend.disabled = !isStarted || isBusy
     elements.buttonReset.disabled = !isStarted || isBusy
     elements.buttonReset.hidden = generated.isTask
-    elements.chatTitle.textContent = generated.isTask ? '📋 Aufgabe' : '💬 Ausprobieren'
-    elements.buttonSend.textContent = generated.isTask ? 'Ausführen' : 'Senden'
-    elements.chatInput.placeholder = !isStarted ? 'Erst den Graphen starten …'
-        : generated.isTask ? 'Was soll der Graph tun?' : 'Frag deinen Graphen …'
+    elements.chatTitle.textContent = generated.isTask ? t('ui.chat.title.task') : t('ui.chat.title')
+    elements.buttonSend.textContent = generated.isTask ? t('ui.run') : t('ui.send')
+    elements.chatInput.placeholder = !isStarted ? t('ui.chat.placeholder.start')
+        : generated.isTask ? t('ui.chat.placeholder.task') : t('ui.chat.placeholder.chat')
     updateStartButton()
 }
 
 // The start button says what a click will do, and stays clickable to show why not.
 function updateStartButton() {
     const isOutdated = null != runningCode && runningCode !== generated.code
-    let label = '▶️ Graph starten'
-    if (null != api && !isModelReady) label = '⏳ Modell lädt …'
-    if (null != runningCode && !isOutdated) label = generated.isTask ? '📋 Aufgabe' : '💬 Chat'
-    if (isOutdated) label = '▶️ Neu starten'
-    if (!generated.canRun) label = '⚠️ Graph noch nicht fertig'
+    let label = t('ui.start')
+    if (null != api && !isModelReady) label = t('ui.start.loading')
+    if (null != runningCode && !isOutdated) label = generated.isTask ? t('ui.chat.title.task') : t('ui.chat.title.chat')
+    if (isOutdated) label = t('ui.start.restart')
+    if (!generated.canRun) label = t('ui.start.blocked')
 
     elements.buttonStart.textContent = label
     elements.buttonStart.disabled = isBusy
@@ -446,13 +562,15 @@ window.graphlings = {
         elements.chatLog.scrollTop = elements.chatLog.scrollHeight
     },
 
-    // Called by app/runner.py before and after every node: the notepad travels to the card,
-    // the card glows while it works, then gets a check.
+    // Called by app/runner.py before and after every node, tool and helper agent: the notepad
+    // travels to the card, the card glows while it works, then gets a check.
+    // Tools and helper agents only glow: the notepad stays at the workshop that calls them.
     onNode(name, status) {
         const nodeId = runningNodeIds[name]
         if (null == nodeId) return
+        const isStep = ![TYPES.tool, TYPES.helper].includes(editor.getItem(nodeId)?.item.type)
         if (status === 'running') {
-            travelTo(nodeId)
+            if (isStep) travelTo(nodeId)
             if (runningAnswerIds.includes(nodeId)) {
                 closeAnswerBubble()
                 openAnswerBubble(nodeId)
@@ -491,7 +609,7 @@ function markEntryAndExit(type) {
 elements.buttonStart.addEventListener('click', async () => {
     openChat(true)
     if (!generated.canRun) return
-    if (null == api) return addBubble('info', 'Nur in der App läuft ein Modell, hier im Browser kannst du bauen und den Code ansehen.')
+    if (null == api) return addBubble('info', t('ui.chat.browserOnly'))
     if (!isModelReady) return
     if (runningCode === generated.code) return elements.chatInput.focus()
 
@@ -507,7 +625,7 @@ elements.buttonStart.addEventListener('click', async () => {
         runningCode = generated.code
         runningNodeIds = generated.nodeIds
         runningAnswerIds = generated.answerNodeIds
-        addBubble('info', generated.isTask ? '🐣 Graph bereit. Gib ihm eine Aufgabe.' : '🐣 Graph läuft, neues Gespräch gestartet.')
+        addBubble('info', generated.isTask ? t('ui.chat.ready.task') : t('ui.chat.ready.chat'))
     }
     onCodeChanged()
     updateChatControls()
@@ -544,7 +662,7 @@ elements.chatForm.addEventListener('submit', async event => {
 
 elements.buttonReset.addEventListener('click', async () => {
     await api.reset()
-    addBubble('info', '🔄 Neues Gespräch, neue thread_id.')
+    addBubble('info', t('ui.chat.reset'))
 })
 
 // ===========================================================================
@@ -568,15 +686,16 @@ for (const example of EXAMPLES) {
     elements.exampleSelect.append(option)
 }
 
-elements.exampleSelect.addEventListener('change', () => {
+elements.exampleSelect.addEventListener('change', async () => {
     const example = EXAMPLES.find(candidate => candidate.id === elements.exampleSelect.value)
     elements.exampleSelect.value = ''
-    if (null == example || !window.confirm(`Den Graphen durch das Beispiel „${example.label}“ ersetzen?`)) return
+    if (null == example) return
+    if (!await askConfirm(t('ui.example.confirm', { label: example.label }))) return
     editor.load(example.workspace)
 })
 
-elements.buttonClear.addEventListener('click', () => {
-    if (!window.confirm('Alle Blöcke entfernen?')) return
+elements.buttonClear.addEventListener('click', async () => {
+    if (!await askConfirm(t('ui.clear.confirm'))) return
     editor.clear()
 })
 
@@ -588,7 +707,7 @@ elements.buttonClear.addEventListener('click', () => {
 // Hidden by default: the graph comes first, the code is the second look.
 function applyCodeVisible(isVisible) {
     document.body.classList.toggle('is-code-hidden', !isVisible)
-    elements.buttonCode.textContent = isVisible ? '🐍 Code ausblenden' : '🐍 Code zeigen'
+    elements.buttonCode.textContent = isVisible ? t('ui.code.hide') : t('ui.code.show')
 }
 
 elements.buttonCode.addEventListener('click', () => {
@@ -601,16 +720,16 @@ elements.buttonCode.addEventListener('click', () => {
 elements.buttonCopy.addEventListener('click', async () => {
     try {
         await navigator.clipboard.writeText(generated.code)
-        elements.buttonCopy.textContent = '✅ Kopiert'
+        elements.buttonCopy.textContent = t('ui.copy.done')
     } catch {
-        elements.buttonCopy.textContent = '⚠️ Ging nicht'
+        elements.buttonCopy.textContent = t('ui.copy.failed')
     }
-    setTimeout(() => elements.buttonCopy.textContent = '📋 Code kopieren', 1500)
+    setTimeout(() => elements.buttonCopy.textContent = t('ui.copy'), 1500)
 })
 
 elements.buttonSave.addEventListener('click', async () => {
     // In the app Python opens a save dialog, in the browser it is a download.
-    if (null != api) {
+    if (null != api?.save_code) {
         const result = await api.save_code(generated.code)
         if (!result.ok && null != result.error) addBubble('error', result.error)
         return
@@ -630,7 +749,7 @@ elements.buttonSave.addEventListener('click', async () => {
 
 function applyTheme(theme) {
     document.documentElement.dataset.theme = theme
-    elements.buttonTheme.textContent = theme === 'dark' ? '☀️ Hell' : '🌙 Dunkel'
+    elements.buttonTheme.textContent = theme === 'dark' ? t('ui.theme.light') : t('ui.theme.dark')
 }
 
 elements.buttonTheme.addEventListener('click', () => {
@@ -639,7 +758,28 @@ elements.buttonTheme.addEventListener('click', () => {
     writeStorage(THEME_KEY, theme)
 })
 
+// ---------------------------------------------------------------------------
+// Language
+//   German or English, from i18n.js. Switching saves the choice and reloads the page.
+// ---------------------------------------------------------------------------
+
+// The texts of index.html: data-text fills the content, data-title and data-aria-label the attributes.
+function applyPageTexts() {
+    document.documentElement.lang = LANGUAGE
+    document.getElementById('mascot').innerHTML = MASCOT
+    for (const node of document.querySelectorAll('[data-text]')) node.textContent = t(node.dataset.text)
+    for (const node of document.querySelectorAll('[data-title]')) node.title = t(node.dataset.title)
+    for (const node of document.querySelectorAll('[data-aria-label]')) node.setAttribute('aria-label', t(node.dataset.ariaLabel))
+}
+
+document.getElementById('button-language').addEventListener('click', () => {
+    writeStorage(LANGUAGE_KEY, LANGUAGE === 'de' ? 'en' : 'de')
+    window.location.reload()
+})
+
+applyPageTexts()
 applyTheme(readStorage(THEME_KEY) === 'dark' ? 'dark' : 'light')
+applySpeed(readSpeed())
 applyCodeVisible(readStorage(CODE_KEY) === 'true')
 editor.load(readSavedWorkspace())
 updateChatControls()

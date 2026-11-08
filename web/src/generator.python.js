@@ -15,6 +15,7 @@
 //
 
 import { linkedCard, pieceOf, routerBranches, TOOL_KINDS, TYPES } from './blocks.graph.js'
+import { t } from './i18n.js'
 
 const LINE_WIDTH = 88
 const BANNER_WIDTH = 75
@@ -281,10 +282,10 @@ function readWorkspace(workspace) {
     const stateBlock = linkedCard(workspace, start, 'state')
     const loneStateCards = workspace.nodes.filter(node => node.type === TYPES.state && node !== stateBlock)
 
-    // The chat remembers as soon as any step hangs at a memory card.
-    const memoryIds = new Set(workspace.nodes.filter(node => node.type === TYPES.memory).map(node => node.id))
-    const memoryLinks = workspace.edges.filter(edge => edge.kind === 'use' && memoryIds.has(edge.to))
-    const memoryBlock = isTask ? null : workspace.nodes.find(node => node.id === memoryLinks[0]?.to) ?? null
+    // The memory hangs at START too: the chat remembers as soon as START hangs at a memory card.
+    const memoryLinks = useLinks(start, 'memory')
+    const memoryBlock = isTask ? null : linkedCard(workspace, start, 'memory')
+    const loneMemoryCards = workspace.nodes.filter(node => node.type === TYPES.memory && node !== memoryBlock)
 
     const stateFields = (stateBlock?.slots.FIELDS ?? []).map(block => ({
         block,
@@ -297,6 +298,23 @@ function readWorkspace(workspace) {
     const toolCards = workspace.nodes.filter(node => node.type === TYPES.tool && null != TOOL_CODE[node.fields.TOOL])
     const toolKinds = [...new Set(toolCards.map(card => card.fields.TOOL))]
         .map(kind => ({ kind, name: TOOL_KINDS[kind].name, cardIds: toolCards.filter(card => card.fields.TOOL === kind).map(card => card.id) }))
+
+    // Helper agents: sub-agents a workshop offers like tools, each with its own prompt and model.
+    const helpers = workspace.nodes.filter(node => node.type === TYPES.helper).map(block => {
+        const name = toIdentifier(block.fields.NAME)
+        const modelLink = useLink(block, 'model')
+        return {
+            block,
+            name,
+            promptConstant: `${name.toUpperCase()}_HELPER_PROMPT`,
+            prompt: block.fields.PROMPT ?? '',
+            hint: block.fields.HINT ?? '',
+            isAnswer: block.fields.SHOW === true,
+            model: findModel(modelLink?.to),
+            modelLinkId: modelLink?.id ?? null,
+        }
+    })
+    const findHelper = id => helpers.find(helper => helper.block.id === id) ?? null
 
     // ---------------------------------------------------------------------------
     // Nodes
@@ -318,10 +336,15 @@ function readWorkspace(workspace) {
         // One node of a kind keeps the short names of chat.py, several get a prefix.
         const isOnlyOfKind = isLlm ? agentCount === 1 : summarizeCount === 1
         const prefix = isOnlyOfKind ? '' : `${upper}_`
-        // A workshop holds tools, an agent plugs into one workshop and gets its tool list.
+        // A workshop holds tools and helper agents, an agent plugs into one workshop and gets its tool list.
         const tools = kind !== 'workshop' ? [] : useLinks(block, 'tools')
-            .map(link => ({ link, card: toolCards.find(card => card.id === link.to) }))
-            .filter(tool => null != tool.card)
+            .map(link => {
+                const card = toolCards.find(candidate => candidate.id === link.to) ?? null
+                const helper = findHelper(link.to)
+                const name = null != helper ? helper.name : null != card ? TOOL_KINDS[card.fields.TOOL].name : null
+                return { link, card: card ?? helper?.block ?? null, helper, name }
+            })
+            .filter(tool => null != tool.name)
         const workshopLink = isLlm ? useLink(block, 'workshop') : null
 
         return {
@@ -432,52 +455,59 @@ function readWorkspace(workspace) {
     //   Collects what keeps the graph from running, and hints.
     // ---------------------------------------------------------------------------
 
-    if (startBlocks.length !== 1) addError('Der Graph braucht genau eine 🟢 START-Karte.', startBlocks[1] ?? plan)
-    if (endIds.size === 0) addError('Der Graph braucht eine 🏁 END-Karte.', plan)
-    if (null != start && null == stateBlock) addHint('An START hängt kein 🗂️ Notizzettel, darauf stehen dann nur die Nachrichten.', start)
-    for (const card of loneStateCards) addHint('Dieser Notizzettel hängt nicht an START und wird nicht benutzt.', card)
-    if (!isTask && memoryLinks.length === 0) addHint('Kein Graphling hängt am 💾 Gedächtnis, jede Frage beginnt mit einem leeren Notizzettel.', plan)
-    if (!nodes.some(node => node.isAnswer)) addHint('Kein Agent hat „📣 Antwort zeigen“ an, du siehst also keine Antwort.', plan)
+    if (startBlocks.length !== 1) addError(t('problem.start.count'), startBlocks[1] ?? plan)
+    if (endIds.size === 0) addError(t('problem.end.missing'), plan)
+    if (null != start && null == stateBlock) addHint(t('hint.state.missing'), start)
+    for (const card of loneStateCards) addHint(t('hint.state.lone'), card)
+    if (!isTask && memoryLinks.length === 0) addHint(t('hint.memory.missing'), start ?? plan)
+    if (!isTask) for (const card of loneMemoryCards) addHint(t('hint.memory.lone'), card)
+    if (!nodes.some(node => node.isAnswer)) addHint(t('hint.answer.none'), plan)
 
     // Names: Python functions and constants must be unique and must not hide built-in names.
     const seenNames = new Set()
-    for (const item of [...nodes, ...routers]) {
+    for (const item of [...nodes, ...routers, ...helpers]) {
         const name = item.routeName ?? item.name
-        if (seenNames.has(name)) addError(`Den Namen "${item.name}" gibt es zweimal.`, item.block)
-        if (RESERVED_NAMES.has(name)) addError(`"${item.name}" ist schon vergeben, nimm einen anderen Namen.`, item.block)
+        if (seenNames.has(name)) addError(t('problem.name.duplicate', { name: item.name }), item.block)
+        if (RESERVED_NAMES.has(name)) addError(t('problem.name.reserved', { name: item.name }), item.block)
         seenNames.add(name)
     }
     const seenModels = new Set()
     for (const model of models) {
-        if (seenModels.has(model.name)) addError(`Den Modellnamen "${model.name}" gibt es zweimal.`, model.block)
+        if (seenModels.has(model.name)) addError(t('problem.model.duplicate', { name: model.name }), model.block)
         seenModels.add(model.name)
+    }
+
+    // Helper agents: a model to ask, and a workshop that offers them.
+    for (const helper of helpers) {
+        if (null == helper.model) addError(t('problem.helper.model', { name: helper.name }), helper.block)
+        if (!workshops.some(workshop => workshop.tools.some(tool => tool.helper === helper))) addHint(t('hint.helper.lone', { name: helper.name }), helper.block)
     }
 
     // Nodes: a model to ask, a way in and a way out.
     for (const node of nodes) {
         if (node.kind !== 'workshop' && null == node.model) {
-            addError(`"${node.name}" hängt an keinem 🧠 Modell. Zieh eine Linie von seinem Modell-Steckplatz zu einer Modell-Karte.`, node.block)
+            addError(t('problem.model.missing', { name: node.name }), node.block)
         }
         if (node.kind === 'summarize' && !hasSummaryField) {
-            addError('Der Zusammenfasser schreibt "summary", füge dem 🗂️ Notizzettel das Feld "summary" hinzu.', node.block)
+            addError(t('problem.summary.field'), node.block)
         }
         if (node.useSummary && !hasSummaryField) {
             addHint('Auf dem Notizzettel fehlt das Feld "summary", die Zusammenfassung bleibt leer.', node.block)
         }
-        if (!flowEdges.some(edge => edge.to === node.block.id)) addHint(`Zu "${node.name}" führt keine Kante, er läuft nie.`, node.block)
+        if (!flowEdges.some(edge => edge.to === node.block.id)) addHint(t('hint.node.unreachable', { name: node.name }), node.block)
         if (null == outgoing(node.block.id, 'out')) addError(`Von "${node.name}" geht keine Kante weg, auch nicht zu END.`, node.block)
     }
     for (const workshop of workshops) {
-        if (workshop.tools.length === 0) addHint(`In der Werkstatt "${workshop.name}" liegt kein 🔧 Werkzeug. Häng Werkzeuge an ihren Steckplatz.`, workshop.block)
+        if (workshop.tools.length === 0) addHint(t('hint.workshop.empty', { name: workshop.name }), workshop.block)
         if (!nodes.some(node => node.workshop === workshop)) {
-            addHint(`Kein Agent steckt in der Werkstatt "${workshop.name}" 🔌, sein Modell kennt ihre Werkzeuge nicht.`, workshop.block)
+            addHint(t('hint.workshop.unplugged', { name: workshop.name }), workshop.block)
         }
     }
     for (const card of toolCards.filter(card => !workshops.some(workshop => workshop.tools.some(tool => tool.card === card)))) {
-        addHint('Dieses Werkzeug liegt in keiner Werkstatt und wird nicht benutzt.', card)
+        addHint(t('hint.tool.lone'), card)
     }
     for (const startBlock of startBlocks) {
-        if (null == outgoing(startBlock.id, 'out')) addError('Von START geht keine Kante weg, der Graph weiß nicht, wo es losgeht.', startBlock)
+        if (null == outgoing(startBlock.id, 'out')) addError(t('problem.start.edge'), startBlock)
     }
     for (const model of models) {
         if (!workspace.edges.some(edge => edge.kind === 'use' && edge.to === model.block.id)) {
@@ -489,24 +519,24 @@ function readWorkspace(workspace) {
     for (const router of routers) {
         if (null == router.conditionKind) addError(`Die Weiche "${router.name}" braucht eine Bedingung aus den Puzzleteilen.`, router.block)
         if (router.conditionKind === 'model' && null == router.model) {
-            addError(`Die Weiche "${router.name}" soll selbst entscheiden, braucht dafür aber ein 🧠 Modell.`, router.block)
+            addError(t('problem.router.model', { name: router.name }), router.block)
         }
         if (router.conditionKind === 'model' && router.branches.length < 2) {
-            addError(`Die Weiche "${router.name}" braucht mindestens zwei 🏷️ Wege zur Auswahl.`, router.block)
+            addError(t('problem.router.ways', { name: router.name }), router.block)
         }
         if (router.conditionKind === 'contains' && router.word.trim() === '') {
             addError(`Bei der Weiche "${router.name}" fehlt das Wort, nach dem sie sucht.`, router.condition)
         }
         for (const branch of router.branches) {
-            if (null == branch.target) addError(`Bei der Weiche "${router.name}" führt der Weg „${branch.label}“ nirgendwo hin.`, router.block)
+            if (null == branch.target) addError(t('problem.router.target', { name: router.name, way: branch.label }), router.block)
             if (null != findRouter(branch.target)) {
-                addError('Eine Weiche direkt nach einer Weiche geht noch nicht, setz einen Knoten dazwischen.', router.block)
+                addError(t('problem.router.chain'), router.block)
             }
         }
-        if (!flowEdges.some(edge => edge.to === router.block.id)) addHint(`Zur Weiche "${router.name}" führt keine Kante.`, router.block)
+        if (!flowEdges.some(edge => edge.to === router.block.id)) addHint(t('hint.router.unreachable', { name: router.name }), router.block)
     }
     const edgeIntoStart = flowEdges.find(edge => startIds.has(edge.to))
-    if (null != edgeIntoStart) addError('Eine Kante zeigt auf START. START ist nur der Eingang.', edgeIntoStart)
+    if (null != edgeIntoStart) addError(t('problem.start.incoming'), edgeIntoStart)
 
     // The plan owns what belongs to the whole graph (the wiring and run_graph),
     // also the chat code, the first model the shared model code.
@@ -525,6 +555,7 @@ function readWorkspace(workspace) {
         memoryLinkIds: memoryLinks.map(edge => edge.id),
         stateFields,
         toolKinds,
+        helpers,
         workshops,
         hasTools,
         isMultiAgent,
@@ -573,6 +604,9 @@ function collectSettings(model) {
     for (const node of model.nodes.filter(node => node.kind !== 'workshop')) {
         add({ blockId: node.block.id, constant: node.promptConstant, kind: 'text', value: node.prompt })
     }
+    for (const helper of model.helpers) {
+        add({ blockId: helper.block.id, constant: helper.promptConstant, kind: 'text', value: helper.prompt })
+    }
     for (const router of model.routers.filter(router => router.conditionKind === 'model')) {
         add({ blockId: router.condition.id, constant: router.promptConstant, kind: 'text', value: router.prompt })
     }
@@ -600,7 +634,7 @@ function writeHeader(writer, model, chapters) {
         '#   Requires: Python 3.11+ and an OpenAI compatible model server',
         `#             (the built-in one of Graphlings listens on ${BUILTIN_BASE_URL}).`,
         '#',
-        model.isTask ? '#   python graph.py "Deine Aufgabe"' : '#   python chat.py',
+        model.isTask ? `#   python graph.py "${t('python.usage.task')}"` : '#   python chat.py',
     ])
     if (hasSettings) writer.many(['#', "#   Settings come from '.env' or environment variables."])
     writer.line()
@@ -1017,6 +1051,7 @@ function writeModel(writer, model) {
 function writeTools(writer, model) {
     const units = [
         ...model.toolKinds.map(tool => [tool.name, TOOL_CODE[tool.kind].summary]),
+        ...model.helpers.map(helper => [helper.name, 'Helper agent: a sub-agent with its own notepad, used like a tool.']),
         ['TOOL_SCHEMAS', 'Name to description for the model: what it does, which arguments.'],
         ...model.workshops.map(workshop => [workshop.toolboxConstant, `The toolbox of the workshop "${workshop.name}".`]),
         ['list_tools', 'Like tools/list in MCP: the descriptions of a toolbox.'],
@@ -1040,11 +1075,21 @@ function writeTools(writer, model) {
         '#   With MCP the workshop would be its own program, reached over a pipe or HTTP.',
         '#   Here it is a dict in the same file, the two steps are the same.',
         '#',
-        '',
-        '',
     ])
+    if (model.helpers.length > 0) {
+        writer.many([
+            '#   A helper agent is a tool that is itself an agent ("agents as tools"): it gets a task,',
+            '#   asks its own model with its own prompt on a fresh, empty notepad and returns only',
+            '#   its answer. It never sees the conversation of the agent that called it.',
+            '#',
+        ])
+    }
+    writer.many(['', ''])
     for (const tool of model.toolKinds) {
         writer.owned(tool.cardIds, () => writer.many([...TOOL_CODE[tool.kind].lines, '', '']))
+    }
+    for (const helper of model.helpers) {
+        writer.owned(helper.block.id, () => writeHelperAgent(writer, helper))
     }
 
     writer.line('TOOL_SCHEMAS = {')
@@ -1065,16 +1110,31 @@ function writeTools(writer, model) {
             '    },',
         ]))
     }
+    for (const helper of model.helpers) {
+        writer.owned(helper.block.id, () => writer.many([
+            `    "${helper.name}": {`,
+            '        "type": "function",',
+            '        "function": {',
+            `            "name": "${helper.name}",`,
+            `            "description": ${pyString(helper.hint)},`,
+            '            "parameters": {',
+            '                "type": "object",',
+            '                "properties": {"task": {"type": "string", "description": "The task for the helper, complete in itself."}},',
+            '                "required": ["task"],',
+            '            },',
+            '        },',
+            '    },',
+        ]))
+    }
     writer.many(['}', ''])
 
-    // One toolbox per workshop: the tools that hang at it.
+    // One toolbox per workshop: the tools and helper agents that hang at it.
     for (const workshop of model.workshops) {
         writer.owned(workshop.block.id, () => {
             writer.line(`# The workshop "${workshop.name}": its tools, name to function.`)
             writer.line(`${workshop.toolboxConstant} = {`)
             for (const tool of workshop.tools) {
-                const name = TOOL_KINDS[tool.card.fields.TOOL].name
-                writer.owned([tool.link.id, tool.card.id], () => writer.line(`    "${name}": ${name},`))
+                writer.owned([tool.link.id, tool.card.id], () => writer.line(`    "${tool.name}": ${tool.name},`))
             }
             writer.many(['}', ''])
         })
@@ -1108,6 +1168,31 @@ function writeTools(writer, model) {
         '    except (TypeError, ValueError) as error:',
         '        # A wrong call goes back to the model as text, it can try again.',
         '        return f"Fehler bei {name}: {error}"',
+        '',
+        '',
+    ])
+}
+
+function writeHelperAgent(writer, helper) {
+    writer.many([
+        `def ${helper.name}(task: str) -> str:`,
+        '    """',
+        '    Helper agent: an agent used like a tool. It works on its own, empty notepad:',
+        '    it sees only the task, not the conversation, and hands back only its answer.',
+        '',
+        '    :param task: (Required) The task the calling agent delegates, complete in itself.',
+        '    :returns:    The answer of the helper agent.',
+        '    """',
+        `    logger.debug(f"[${helper.name}] Task: {task}")`,
+        '    answer = ask_model(',
+    ])
+    // The model line belongs to the use link: a click on the dotted line marks it.
+    writer.owned(helper.modelLinkId, () => writer.line(`        ${helper.model?.constant ?? 'None'},`))
+    writer.line(`        [{"role": "system", "content": ${helper.promptConstant}}, {"role": "user", "content": task}],`)
+    if (helper.isAnswer) writer.line('        on_token=show_token,')
+    writer.many([
+        '    )',
+        '    return answer["content"]',
         '',
         '',
     ])
@@ -1201,7 +1286,7 @@ function writeLlmNode(writer, node) {
         writer.many([
             `    system_prompt = ${node.promptConstant}`,
             '    if state.get("summary"):',
-            '        system_prompt += f"\\n\\nZusammenfassung des bisherigen Gesprächs:\\n{state[\'summary\']}"',
+            `        system_prompt += f"\\n\\n${t('python.summary.context')}\\n{state['summary']}"`,
             '',
         ])
         systemPrompt = 'system_prompt'
@@ -1247,7 +1332,7 @@ function writeSummarizeNode(writer, node) {
         '',
         `    instruction = ${node.promptConstant}`,
         '    if state.get("summary"):',
-        '        instruction += f"\\n\\nBisherige Zusammenfassung, ergänze sie:\\n{state[\'summary\']}"',
+        `        instruction += f"\\n\\n${t('python.summary.extend')}\\n{state['summary']}"`,
         '',
         `    logger.debug(f"[${node.name}] Compacting {len(old_messages)} message(s).")`,
         '    summary = ask_model(',
@@ -1492,7 +1577,7 @@ function writeStreamAnswer(writer, model) {
         '    question_message = {"role": "user", "content": question}',
         '    state = {**state, "messages": [*state["messages"], question_message]}',
         '',
-        '    print("KI: ", end="", flush=True)',
+        `    print("${t('python.answer.prefix')}", end="", flush=True)`,
         '    try:',
     ])
     if (hasMemory) {
@@ -1529,8 +1614,8 @@ function writeChatMain(writer) {
         ...banner('Setup', 'Starts a conversation and shows the commands.'),
         '',
         '    thread_id = str(uuid.uuid4())',
-        '    print(f"Modell: {MODEL} @ {BASE_URL}")',
-        '    print(f"Befehle: {RESET_COMMAND} = neues Gespräch, exit = beenden\\n")',
+        `    print(f"${t('python.model.line')}{MODEL} @ {BASE_URL}")`,
+        `    print(f"${t('python.commands', { reset: '{RESET_COMMAND}' })}\\n")`,
         '    logger.debug(f"[main] Thread {thread_id}.")',
         '',
         ...banner('Chat loop', 'Sends every question through the graph.'),
@@ -1538,7 +1623,7 @@ function writeChatMain(writer) {
         '    while True:',
         '        # Read the question. Ctrl+C and Ctrl+D end the session.',
         '        try:',
-        '            question = input("Du: ").strip()',
+        `            question = input("${t('python.question.prefix')}").strip()`,
         '        except (EOFError, KeyboardInterrupt):',
         '            print()',
         '            break',
@@ -1552,7 +1637,7 @@ function writeChatMain(writer) {
         '            # A new thread starts with an empty state, the old one is left behind.',
         '            thread_id = str(uuid.uuid4())',
         '            logger.debug(f"[main] Reset -> new thread {thread_id}.")',
-        '            print("Neues Gespräch gestartet.\\n")',
+        `            print("${t('python.reset.done')}\\n")`,
         '            continue',
         '',
         '        # Answer. Only failures the user can fix are handled, the rest bubbles up.',
@@ -1560,13 +1645,13 @@ function writeChatMain(writer) {
         '            stream_answer(thread_id, question)',
         '        except urllib.error.URLError:',
         '            print(',
-        '                f"\\n[Fehler] Das Modell ist unter {BASE_URL} nicht erreichbar. "',
-        '                "Läuft der Server?\\n"',
+        `                f"\\n${t('python.error.unreachable', { url: '{BASE_URL}' })}"`,
+        `                "${t('python.error.server')}\\n"`,
         '            )',
         '',
         ...banner('Goodbye', 'Ends the session with exit code 0.'),
         '',
-        '    print("Tschüss!")',
+        `    print("${t('python.goodbye')}")`,
         '    return 0',
         '',
         '',
@@ -1592,11 +1677,11 @@ function writeTask(writer) {
         '    :returns:    The notepad at the end, with every message of the run.',
         '',
         '    Example:',
-        '        run_task("Schreib einen Vierzeiler über Raketen.")',
+        `        run_task("${t('python.task.example')}")`,
         '    """',
         '    state = {**new_state(), "messages": [{"role": "user", "content": task}]}',
         '',
-        '    print("KI: ", end="", flush=True)',
+        `    print("${t('python.answer.prefix')}", end="", flush=True)`,
         '    final_state = run_graph(state)',
         '    print("\\n")',
         '    return final_state',
@@ -1611,18 +1696,18 @@ function writeTask(writer) {
         '    Example:',
         '        sys.exit(main())',
         '    """',
-        '    task = " ".join(sys.argv[1:]).strip() or input("Aufgabe: ").strip()',
+        `    task = " ".join(sys.argv[1:]).strip() or input("${t('python.task.prompt')}").strip()`,
         '    if not task:',
-        '        print("Keine Aufgabe, nichts zu tun.")',
+        `        print("${t('python.task.none')}")`,
         '        return 1',
         '',
         '    try:',
         '        final_state = run_task(task)',
         '    except urllib.error.URLError:',
-        '        print(f"[Fehler] Das Modell ist unter {BASE_URL} nicht erreichbar. Läuft der Server?")',
+        `        print(f"${t('python.error.unreachable', { url: '{BASE_URL}' })}${t('python.error.server')}")`,
         '        return 1',
         '',
-        '    print("Notizzettel am Ende:")',
+        `    print("${t('python.task.notepad')}")`,
         '    print(json.dumps(final_state, ensure_ascii=False, indent=2))',
         '    return 0',
         '',
@@ -1679,9 +1764,13 @@ export function generatePython(workspace) {
         problems: model.problems,
         canRun: !model.problems.some(problem => problem.isError),
         isTask: model.isTask,
-        // The runner reports nodes by name, the editor knows cards by id.
-        nodeIds: Object.fromEntries(model.nodes.map(node => [node.name, node.block.id])),
-        // Agents that show their answer: in the app every one gets its own chat bubble.
-        answerNodeIds: model.nodes.filter(node => node.isAnswer).map(node => node.block.id),
+        // The runner reports nodes, tools and helper agents by name, the editor knows cards by id.
+        nodeIds: Object.fromEntries([
+            ...model.nodes.map(node => [node.name, node.block.id]),
+            ...model.helpers.map(helper => [helper.name, helper.block.id]),
+            ...model.toolKinds.map(tool => [tool.name, tool.cardIds[0]]),
+        ]),
+        // Agents and helpers that show their answer: in the app every one gets its own chat bubble.
+        answerNodeIds: [...model.nodes, ...model.helpers].filter(item => item.isAnswer).map(item => item.block.id),
     }
 }

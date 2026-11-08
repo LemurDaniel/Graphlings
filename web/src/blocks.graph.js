@@ -1,6 +1,7 @@
 // NOTE:
 //   The cards and puzzle pieces of Graphlings: shape, colour and explanation of each.
 //   Plain data for the graph editor, no DOM, so the generator test runs in Node.
+//   Every visible text comes from texts.js through t(), in the language picked at load.
 //
 //   import { DEFINITIONS, PALETTE, PLAN_TYPE } from './blocks.graph.js'
 //   new GraphEditor({ root, definitions: DEFINITIONS, palette: PALETTE, planType: PLAN_TYPE })
@@ -13,14 +14,16 @@
 //   Chapters:
 //     HELPERS            Type names, lookups of pieces, links and switch branches.
 //     DEFINE CARDS       The steps of the graph: START, END, agent, summarizer, workshop, switch.
-//     DEFINE RESOURCES   The cards that steps use: model, notepad, memory, tools.
+//     DEFINE RESOURCES   The cards that steps use: model, notepad, memory, tools, helper agents.
 //     DEFINE PIECES      The plan of the graph and the puzzle pieces that go into slots.
-//     CHAT LOOP          The dashed arc from END back to START: the chat around the graph.
+//     MIGRATE            Brings older saved graphs up to date.
 //     DESCRIBE           Plain words for every card, piece and line, for beginners.
 //     PALETTE            The sections of the palette.
 //
 
 import { BREAK, checkbox, dropdown, number, slot, text } from './engine/engine.parts.js'
+import { t } from './i18n.js'
+import { MONSTERS } from './monsters.graph.js'
 
 export const PLAN_TYPE = 'graphlings_plan'
 
@@ -35,6 +38,7 @@ export const TYPES = {
     state: 'graphlings_state',
     memory: 'graphlings_memory',
     tool: 'graphlings_tool',
+    helper: 'graphlings_helper',
     conditionLength: 'graphlings_condition_length',
     conditionContains: 'graphlings_condition_contains',
     conditionTools: 'graphlings_condition_tools',
@@ -44,11 +48,12 @@ export const TYPES = {
     stateField: 'graphlings_state_field',
 }
 
-// The tools a tool card can be: the generator writes one Python function per kind.
+// The tools a tool card can be: the generator writes one Python function per kind,
+// the card shows 'skill' as a plain-words chip.
 export const TOOL_KINDS = {
-    calculator: { label: '🧮 Rechner', name: 'calculator' },
-    clock: { label: '🕒 Uhrzeit', name: 'clock' },
-    dice: { label: '🎲 Würfel', name: 'dice' },
+    calculator: { label: t('tool.calculator.label'), name: 'calculator', skill: t('tool.calculator.skill') },
+    clock: { label: t('tool.clock.label'), name: 'clock', skill: t('tool.clock.skill') },
+    dice: { label: t('tool.dice.label'), name: 'dice', skill: t('tool.dice.skill') },
 }
 
 const COLOURS = {
@@ -62,6 +67,7 @@ const COLOURS = {
     state: '#ff9f2e',
     memory: '#c86ad1',
     tool: '#d9893a',
+    helper: '#8fbc5a',
     condition: '#ff8fab',
     setup: '#5b8def',
     plan: '#4c5fd5',
@@ -74,6 +80,7 @@ const COLOURS = {
 //   pieceOf          The first piece of a type in a slot of a block.
 //   linkedCard       The card a socket of a card is linked to.
 //   linkedCards      All cards a socket is linked to, for sockets that take several.
+//   startMemory      The memory card at START, null when the graph forgets after every round.
 //   routerBranches   The ways out of a switch: ja/nein, or one per way of the model decision.
 //   getExplanation   The explain text of a type.
 //
@@ -93,12 +100,17 @@ export function linkedCards(workspace, block, port) {
         .filter(Boolean)
 }
 
+export function startMemory(workspace) {
+    const start = workspace.nodes.find(node => node.type === TYPES.start) ?? null
+    return linkedCard(workspace, start, 'memory')
+}
+
 export function routerBranches(block) {
     const condition = (block?.slots?.CONDITION ?? [])[0] ?? null
     if (condition?.type === TYPES.conditionModel) {
         return (condition.slots.OPTIONS ?? []).map(option => ({ port: option.id, label: option.fields.NAME || '…', option }))
     }
-    return [{ port: 'then', label: 'ja' }, { port: 'else', label: 'nein' }]
+    return [{ port: 'then', label: t('card.router.branch.yes') }, { port: 'else', label: t('card.router.branch.no') }]
 }
 
 export function getExplanation(type) {
@@ -108,7 +120,7 @@ export function getExplanation(type) {
 // A chip for a socket: the name of the linked card, or what is missing.
 function linkChip(workspace, block, port, icon) {
     const card = linkedCard(workspace, block, port)
-    return null == card ? `${icon} fehlt` : `${icon} ${card.fields.NAME ?? ''}`.trim()
+    return null == card ? `${icon} ${t('card.chip.missing')}` : `${icon} ${card.fields.NAME ?? ''}`.trim()
 }
 
 // ===========================================================================
@@ -135,28 +147,42 @@ export const DEFINITIONS = []
 DEFINITIONS.push({
     type: TYPES.start,
     colour: COLOURS.start,
-    parts: ['🟢 START: Hier kommt jede neue Frage oder Aufgabe in den Graphen.'],
+    parts: [t('card.start.parts')],
     node: {
         shape: 'rocket',
         emoji: '🟢',
-        kind: 'neue Frage',
+        kind: t('card.start.kind'),
         title: () => 'START',
         hasInput: false,
         outputs: () => [{ port: 'out' }],
         // Every run starts with the notepad: START hands it to the first graphling.
-        uses: [{ port: 'state', label: '🗂️ Notizzettel', accepts: 'state' }],
+        // With a memory, START takes the notepad of the last round instead of a fresh one.
+        uses: [
+            { port: 'state', label: t('card.use.state'), accepts: 'state' },
+            { port: 'memory', label: t('card.use.memory'), accepts: 'memory' },
+        ],
     },
-    explain: 'START ist kein Knoten, sondern der Eingang einer Runde: EDGES[START] sagt, welcher Knoten zuerst läuft. '
-        + 'Unten hängt der Notizzettel: Jede Runde beginnt mit einem State aus new_state(), mit Gedächtnis mit dem aus MEMORY.',
+    explain: t('card.start.explain'),
 })
 
 DEFINITIONS.push({
     type: TYPES.end,
     colour: COLOURS.end,
-    parts: ['🏁 END: Die Arbeit ist fertig, die Runde endet.'],
-    node: { shape: 'flag', emoji: '🏁', kind: 'fertig', title: () => 'END', hasInput: true, outputs: () => [] },
-    explain: 'END beendet eine Runde: run_graph() hört auf und gibt den State zurück. '
-        + 'Im Chat wartet main() danach auf die nächste Frage und lässt den Graphen wieder bei START laufen.',
+    parts: [t('card.end.parts')],
+    node: {
+        shape: 'flag',
+        emoji: '🏁',
+        kind: t('card.end.kind'),
+        title: () => 'END',
+        hasInput: true,
+        outputs: () => [],
+        // Where the notepad goes after the round: result of a task, into the memory, or into the bin.
+        chips: ({ workspace }) => {
+            if (workspace.plan?.fields?.RUN_MODE === 'task') return [t('card.end.chip.task')]
+            return [null != startMemory(workspace) ? t('card.end.chip.memory') : t('card.end.chip.bin')]
+        },
+    },
+    explain: t('card.end.explain'),
 })
 
 // ---------------------------------------------------------------------------
@@ -168,79 +194,74 @@ DEFINITIONS.push({
     type: TYPES.agent,
     colour: COLOURS.agent,
     parts: [
-        '🤖 Agent', text('NAME', 'chat'), BREAK,
-        'System-Prompt', text('PROMPT', 'Du bist ein hilfreicher Assistent. Antworte auf Deutsch, klar und präzise.', { wide: true }), BREAK,
-        '📣 Antwort zeigen', checkbox('SHOW', true), BREAK,
-        '📜 Zusammenfassung mitschicken', checkbox('USE_SUMMARY', false),
+        t('card.agent.title'), text('NAME', 'chat'), BREAK,
+        t('card.agent.prompt'), text('PROMPT', t('card.agent.prompt.default'), { wide: true }), BREAK,
+        t('card.agent.show'), checkbox('SHOW', true), BREAK,
+        t('card.agent.summary'), checkbox('USE_SUMMARY', false),
     ],
     node: {
-        kind: 'Agent · fragt das Modell',
-        title: ({ block }) => block.fields.NAME,
+        avatar: MONSTERS.agent,
+        kind: t('card.agent.kind'),
+        title: ({ block, isPalette }) => isPalette ? t('card.agent.type') : block.fields.NAME,
         hasInput: true,
         outputs: () => [{ port: 'out' }],
         uses: [
-            { port: 'model', label: '🧠 Modell', accepts: 'model' },
-            { port: 'memory', label: '💾 Gedächtnis', accepts: 'memory' },
-            { port: 'workshop', label: '🔌 Werkstatt (MCP)', accepts: 'workshop' },
+            { port: 'model', label: t('card.use.model'), accepts: 'model' },
+            { port: 'workshop', label: t('card.use.workshop'), accepts: 'workshop' },
         ],
         chips: ({ block, workspace }) => {
             const workshop = linkedCard(workspace, block, 'workshop')
             return [
                 linkChip(workspace, block, 'model', '🧠'),
                 null != workshop ? `🔌 ${workshop.fields.NAME}` : null,
-                block.fields.USE_SUMMARY ? '📜 Zusammenfassung' : null,
-                block.fields.SHOW ? '📣 zeigt Antwort' : null,
+                block.fields.USE_SUMMARY ? t('card.agent.chip.summary') : null,
+                block.fields.SHOW ? t('card.agent.chip.show') : null,
             ].filter(Boolean)
         },
     },
-    explain: 'Ein Agent ist hier eine normale Python-Funktion: Sie bekommt den State und gibt nur die Änderung zurück. '
-        + 'Sie schickt ihre Rolle (System-Prompt) plus Verlauf an das Modell, an dem sie unten hängt, und hängt die Antwort an. '
-        + 'Hängt sie an einer Werkstatt, holt sie sich deren Werkzeugliste (list_tools) und das Modell darf sie aufrufen (tool_calls).',
+    explain: t('card.agent.explain'),
 })
 
 DEFINITIONS.push({
     type: TYPES.summarize,
     colour: COLOURS.summarize,
     parts: [
-        '🗜️ Zusammenfasser', text('NAME', 'summarize'), BREAK,
-        'behalte die letzten', number('KEEP_LAST', 6, { min: 0, max: 100 }), 'Nachrichten', BREAK,
-        'Anweisung', text('PROMPT', 'Fasse das bisherige Gespräch knapp auf Deutsch zusammen. Behalte Fakten über den Nutzer, '
-            + 'getroffene Entscheidungen und offene Fragen. Antworte nur mit der Zusammenfassung.', { wide: true }),
+        t('card.summarize.title'), text('NAME', t('card.summarize.name.default')), BREAK,
+        t('card.summarize.keep.before'), number('KEEP_LAST', 6, { min: 0, max: 100 }), t('card.summarize.keep.after'), BREAK,
+        t('card.summarize.instruction'), text('PROMPT', t('card.summarize.prompt.default'), { wide: true }),
     ],
     node: {
-        kind: 'Graphling · fasst zusammen',
-        title: ({ block }) => block.fields.NAME,
+        avatar: MONSTERS.summarize,
+        kind: t('card.summarize.kind'),
+        title: ({ block, isPalette }) => isPalette ? t('card.summarize.type') : block.fields.NAME,
         hasInput: true,
         outputs: () => [{ port: 'out' }],
-        uses: [{ port: 'model', label: '🧠 Modell', accepts: 'model' }],
-        chips: ({ block, workspace }) => [linkChip(workspace, block, 'model', '🧠'), `📦 behält ${block.fields.KEEP_LAST}`],
+        uses: [{ port: 'model', label: t('card.use.model'), accepts: 'model' }],
+        chips: ({ block, workspace }) => [linkChip(workspace, block, 'model', '🧠'), t('card.summarize.chip.keep', { count: block.fields.KEEP_LAST })],
     },
-    explain: 'Compacting: Alte Nachrichten wandern in eine Zusammenfassung, damit der Verlauf nicht endlos wächst. '
-        + 'Der Knoten lässt sein Modell die alten Nachrichten zusammenfassen '
-        + 'und gibt das neue "summary" plus nur noch die letzten Nachrichten zurück.',
+    explain: t('card.summarize.explain'),
 })
 
 DEFINITIONS.push({
     type: TYPES.workshop,
     colour: COLOURS.workshop,
-    parts: ['🔧 Werkstatt', text('NAME', 'werkstatt')],
+    parts: [t('card.workshop.title'), text('NAME', t('card.workshop.name.default'))],
     node: {
-        kind: 'Graphling · Werkzeugkasten',
-        title: ({ block }) => block.fields.NAME,
+        avatar: MONSTERS.workshop,
+        kind: t('card.workshop.kind'),
+        title: ({ block, isPalette }) => isPalette ? t('card.workshop.type') : block.fields.NAME,
         hasInput: true,
         outputs: () => [{ port: 'out' }],
         // Like an MCP server: agents plug in to learn its tools, the tools hang below it.
         provides: 'workshop',
-        uses: [{ port: 'tools', label: '🔧 Werkzeuge', accepts: 'tool', multiple: true }],
+        uses: [{ port: 'tools', label: t('card.use.tools'), accepts: 'tool', multiple: true }],
         chips: ({ block, workspace }) => {
             const tools = linkedCards(workspace, block, 'tools')
-            return [tools.length > 0 ? `🔧 ${tools.length} Werkzeug${tools.length === 1 ? '' : 'e'}` : '🔧 leer']
+            if (tools.length === 0) return [t('card.workshop.chip.empty')]
+            return [tools.length === 1 ? t('card.workshop.chip.one') : t('card.workshop.chip.many', { count: tools.length })]
         },
     },
-    explain: 'Die Werkstatt ist ein Werkzeugkasten, gebaut wie ein MCP-Server: Ihre Werkzeuge stehen in einem dict. '
-        + 'list_tools() gibt dem Agenten die Beschreibungen (wie tools/list bei MCP), '
-        + 'als Knoten führt sie die tool_calls der letzten Antwort mit call_tool() aus (wie tools/call) '
-        + 'und hängt jedes Ergebnis als Nachricht mit role "tool" an. Danach geht es zurück zum Agenten: die Agent-Schleife.',
+    explain: t('card.workshop.explain'),
 })
 
 // ---------------------------------------------------------------------------
@@ -251,26 +272,25 @@ DEFINITIONS.push({
 DEFINITIONS.push({
     type: TYPES.router,
     colour: COLOURS.router,
-    parts: ['🔀 Weiche', text('NAME', 'weiche'), slot('CONDITION', 'Bedingung', 'condition')],
+    parts: [t('card.router.title'), text('NAME', t('card.router.name.default')), slot('CONDITION', t('card.router.slot'), 'condition')],
     node: {
-        kind: 'Weiche · entscheidet den Weg',
-        title: ({ block }) => block.fields.NAME,
+        avatar: MONSTERS.router,
+        kind: t('card.router.kind'),
+        title: ({ block, isPalette }) => isPalette ? t('card.router.type') : block.fields.NAME,
         hasInput: true,
         outputs: ({ block }) => routerBranches(block),
         // Only the decision by the model needs a model, the other conditions just look.
-        uses: [{ port: 'model', label: '🧠 Modell', accepts: 'model' }],
+        uses: [{ port: 'model', label: t('card.use.model'), accepts: 'model' }],
         chips: ({ block }) => {
             const condition = (block.slots.CONDITION ?? [])[0]
-            if (null == condition) return ['❓ keine Bedingung']
-            if (condition.type === TYPES.conditionLength) return [`📏 > ${condition.fields.MAX} Nachrichten`]
-            if (condition.type === TYPES.conditionContains) return [`📝 enthält „${condition.fields.WORD}“`]
-            if (condition.type === TYPES.conditionTools) return ['🔧 will Werkzeug?']
-            return [`🧠 Modell wählt aus ${condition.slots.OPTIONS?.length ?? 0} Wegen`]
+            if (null == condition) return [t('card.router.chip.none')]
+            if (condition.type === TYPES.conditionLength) return [t('card.router.chip.length', { max: condition.fields.MAX })]
+            if (condition.type === TYPES.conditionContains) return [t('card.router.chip.contains', { word: condition.fields.WORD })]
+            if (condition.type === TYPES.conditionTools) return [t('card.router.chip.tools')]
+            return [t('card.router.chip.model', { count: condition.slots.OPTIONS?.length ?? 0 })]
         },
     },
-    explain: 'Eine Weiche ist kein Knoten, sondern eine Entscheidung auf der Kante: '
-        + 'Im Code wird sie eine Routing-Funktion, die in den State schaut und den Namen des nächsten Knotens zurückgibt. '
-        + 'In EDGES steht dann statt eines Namens diese Funktion. So drehen Agents Schleifen oder biegen ab.',
+    explain: t('card.router.explain'),
 })
 
 // ===========================================================================
@@ -281,6 +301,7 @@ DEFINITIONS.push({
 //   2. Notepad   The dict that travels through a run, with its fields.
 //   3. Memory    Keeps the notepad between runs.
 //   4. Tool      A Python function the model may ask for.
+//   5. Helper    An agent used like a tool: own notepad, only the task, only the answer.
 //
 //   A resource has 'provides': a knob on top that fits the sockets of the same name.
 //   It is no step of the graph: nothing flows into it, steps only use it.
@@ -295,21 +316,19 @@ DEFINITIONS.push({
     type: TYPES.model,
     colour: COLOURS.model,
     parts: [
-        '🧠 Modell', text('NAME', 'qwen'), BREAK,
-        dropdown('MODE', 'builtin', [['🐣 eingebaut (Qwen 1.5B)', 'builtin']]), BREAK,
-        'Temperatur', number('TEMPERATURE', 0.7, { min: 0, max: 2, step: 0.1 }),
+        t('card.model.title'), text('NAME', 'qwen'), BREAK,
+        dropdown('MODE', 'builtin', [[t('card.model.builtin'), 'builtin']]), BREAK,
+        t('card.model.temperature'), number('TEMPERATURE', 0.7, { min: 0, max: 2, step: 0.1 }),
     ],
     node: {
         shape: 'resource',
         emoji: '🧠',
-        kind: 'Modell · zustandslos',
-        title: ({ block }) => block.fields.NAME,
+        kind: t('card.model.kind'),
+        title: ({ block, isPalette }) => isPalette ? t('card.model.type') : block.fields.NAME,
         provides: 'model',
-        chips: ({ block }) => ['🐣 Qwen 1.5B', `🌡️ ${block.fields.TEMPERATURE}`],
+        chips: ({ block }) => ['📦 Qwen 1.5B', `🌡️ ${block.fields.TEMPERATURE}`],
     },
-    explain: 'Ein Modell ist nur ein Server, den man per HTTP fragt, und es ist zustandslos: Es merkt sich nichts. '
-        + 'Im Code ist es ein kleines dict mit Name und Temperatur. ask_model() schickt es zusammen mit dem ganzen Gespräch '
-        + 'an /chat/completions. Mehrere Agenten können ein Modell teilen oder eigene haben, z. B. kreativ und genau.',
+    explain: t('card.model.explain'),
 })
 
 // ---------------------------------------------------------------------------
@@ -320,18 +339,16 @@ DEFINITIONS.push({
 DEFINITIONS.push({
     type: TYPES.state,
     colour: COLOURS.state,
-    parts: ['🗂️ Notizzettel (State): alle Nachrichten und dazu', slot('FIELDS', 'Felder', 'state_field')],
+    parts: [t('card.state.parts'), slot('FIELDS', t('card.state.slot'), 'state_field')],
     node: {
         shape: 'resource',
         emoji: '🗂️',
-        kind: 'State · was eine Runde weiß',
-        title: () => 'Notizzettel',
+        kind: t('card.state.kind'),
+        title: () => t('card.state.title'),
         provides: 'state',
-        chips: ({ block }) => ['messages', ...(block.slots.FIELDS ?? []).map(field => field.fields.NAME)],
+        chips: ({ block }) => [t('card.state.chip.messages'), ...(block.slots.FIELDS ?? []).map(field => `🔤 ${field.fields.NAME}`)],
     },
-    explain: 'Der State ist ein dict, das durch eine Runde wandert. new_state() legt ihn an: immer mit "messages", '
-        + 'dazu die Felder dieser Karte. START hängt an ihm, weil jede Runde mit so einem State beginnt. '
-        + 'Danach reicht run_graph() ihn an jeden Knoten weiter, jeder gibt nur die Schlüssel zurück, die er ändert.',
+    explain: t('card.state.explain'),
 })
 
 // ---------------------------------------------------------------------------
@@ -342,18 +359,16 @@ DEFINITIONS.push({
 DEFINITIONS.push({
     type: TYPES.memory,
     colour: COLOURS.memory,
-    parts: ['💾 Gedächtnis: merkt sich jedes Gespräch per thread_id.'],
+    parts: [t('card.memory.parts')],
     node: {
         shape: 'resource',
         emoji: '💾',
-        kind: 'Gedächtnis · MEMORY',
-        title: () => 'Gedächtnis',
+        kind: t('card.memory.kind'),
+        title: () => t('card.memory.title'),
         provides: 'memory',
-        chips: () => ['MEMORY[thread_id]'],
+        chips: () => [t('card.memory.chip')],
     },
-    explain: 'Das Gedächtnis ist ein dict: MEMORY[thread_id] = State nach der letzten Runde. '
-        + 'Hängt ein Agent daran, holt stream_answer() bei jeder Frage den alten State heraus und hängt die Frage an. '
-        + 'Ohne beginnt jede Runde mit einem leeren State. Im Aufgaben-Modus gibt es nur eine Runde, dort zählt es nicht.',
+    explain: t('card.memory.explain'),
 })
 
 // ---------------------------------------------------------------------------
@@ -364,18 +379,47 @@ DEFINITIONS.push({
 DEFINITIONS.push({
     type: TYPES.tool,
     colour: COLOURS.tool,
-    parts: ['🔧 Werkzeug', dropdown('TOOL', 'calculator', Object.entries(TOOL_KINDS).map(([kind, tool]) => [tool.label, kind]))],
+    parts: [t('card.tool.title'), dropdown('TOOL', 'calculator', Object.entries(TOOL_KINDS).map(([kind, tool]) => [tool.label, kind]))],
     node: {
         shape: 'resource',
         emoji: '🔧',
-        kind: 'Werkzeug · eine Funktion',
+        kind: t('card.tool.kind'),
         title: ({ block }) => TOOL_KINDS[block.fields.TOOL]?.label ?? '?',
         provides: 'tool',
-        chips: ({ block }) => [`${TOOL_KINDS[block.fields.TOOL]?.name ?? '?'}()`],
+        chips: ({ block }) => [`✨ ${TOOL_KINDS[block.fields.TOOL]?.skill ?? '?'}`],
     },
-    explain: 'Ein Werkzeug ist eine Python-Funktion plus eine Beschreibung als JSON (Name, Zweck, Parameter). '
-        + 'Die Beschreibung geht mit an das Modell. Will es das Werkzeug nutzen, antwortet es nicht mit Text, '
-        + 'sondern mit tool_calls: Name und Argumente. Es hängt an einer Werkstatt, die es anbietet und ausführt.',
+    explain: t('card.tool.explain'),
+})
+
+// ---------------------------------------------------------------------------
+// Helper
+//   An agent used like a tool: own notepad, only the task, only the answer.
+// ---------------------------------------------------------------------------
+
+DEFINITIONS.push({
+    type: TYPES.helper,
+    colour: COLOURS.helper,
+    parts: [
+        t('card.helper.title'), text('NAME', t('card.helper.name.default')), BREAK,
+        t('card.agent.prompt'), text('PROMPT', t('card.helper.prompt.default'), { wide: true }), BREAK,
+        t('card.helper.hint'), text('HINT', t('card.helper.hint.default'), { wide: true }), BREAK,
+        t('card.agent.show'), checkbox('SHOW', true),
+    ],
+    node: {
+        // A graphling like the agent, but a resource: it hangs in the workshop like a tool.
+        shape: 'resource',
+        avatar: MONSTERS.helper,
+        kind: t('card.helper.kind'),
+        title: ({ block, isPalette }) => isPalette ? t('card.helper.type') : block.fields.NAME,
+        provides: 'tool',
+        uses: [{ port: 'model', label: t('card.use.model'), accepts: 'model' }],
+        chips: ({ block, workspace }) => [
+            linkChip(workspace, block, 'model', '🧠'),
+            t('card.helper.chip.notepad'),
+            block.fields.SHOW ? t('card.agent.chip.show') : null,
+        ].filter(Boolean),
+    },
+    explain: t('card.helper.explain'),
 })
 
 // ===========================================================================
@@ -398,13 +442,11 @@ DEFINITIONS.push({
     type: PLAN_TYPE,
     colour: COLOURS.plan,
     parts: [
-        '🚀 Modus', dropdown('RUN_MODE', 'chat', [['💬 Chat: Frage um Frage', 'chat'], ['📋 Aufgabe: einmal durchlaufen', 'task']]), BREAK,
-        '🔁 höchstens', number('MAX_STEPS', 25, { min: 2, max: 200 }), 'Schritte pro Runde',
-        slot('SETUP', 'Bausteine', 'setup'),
+        t('piece.plan.mode'), dropdown('RUN_MODE', 'chat', [[t('piece.plan.mode.chat'), 'chat'], [t('piece.plan.mode.task'), 'task']]), BREAK,
+        t('piece.plan.steps.before'), number('MAX_STEPS', 25, { min: 2, max: 200 }), t('piece.plan.steps.after'),
+        slot('SETUP', t('piece.plan.slot'), 'setup'),
     ],
-    explain: 'Der Bauplan gilt für den ganzen Graphen. Der Modus entscheidet über main(): im Chat eine Schleife über stream_answer(), '
-        + 'als Aufgabe ein einziger Lauf über run_task(), der den fertigen State zurückgibt. '
-        + 'MAX_STEPS bremst Graphen, die sich im Kreis drehen, z. B. eine Agent-Schleife, die nie fertig wird.',
+    explain: t('piece.plan.explain'),
 })
 
 // ---------------------------------------------------------------------------
@@ -416,45 +458,40 @@ DEFINITIONS.push({
     type: TYPES.conditionLength,
     colour: COLOURS.condition,
     fits: 'condition',
-    parts: ['📏 mehr als', number('MAX', 20, { min: 0, max: 1000 }), 'Nachrichten'],
-    explain: 'Ist der Verlauf länger als N Nachrichten, geht es über "ja" weiter, sonst über "nein". 0 heißt: immer "nein".',
+    parts: [t('piece.length.before'), number('MAX', 20, { min: 0, max: 1000 }), t('piece.length.after')],
+    explain: t('piece.length.explain'),
 })
 
 DEFINITIONS.push({
     type: TYPES.conditionContains,
     colour: COLOURS.condition,
     fits: 'condition',
-    parts: ['📝 letzte Antwort enthält', text('WORD', 'OK')],
-    explain: 'Die Weiche schaut in die letzte Nachricht: Steht das Wort darin (groß/klein egal), geht es über "ja", sonst über "nein". '
-        + 'So prüft ein Kritiker, ob ein Text gut genug ist: die Reflexions-Schleife.',
+    parts: [t('piece.contains.label'), text('WORD', 'OK')],
+    explain: t('piece.contains.explain'),
 })
 
 DEFINITIONS.push({
     type: TYPES.conditionTools,
     colour: COLOURS.condition,
     fits: 'condition',
-    parts: ['🔧 Modell will ein Werkzeug benutzen'],
-    explain: 'Die Weiche schaut, ob die letzte Antwort tool_calls enthält. Ja: weiter zur Werkstatt, die sie ausführt. '
-        + 'Nein: Das Modell ist fertig. Das ist der Kern jeder Agent-Schleife.',
+    parts: [t('piece.tools.label')],
+    explain: t('piece.tools.explain'),
 })
 
 DEFINITIONS.push({
     type: TYPES.conditionModel,
     colour: COLOURS.condition,
     fits: 'condition',
-    parts: ['🧠 Modell entscheidet zwischen', slot('OPTIONS', 'Wegen', 'route_option')],
-    explain: 'Die Weiche fragt ihr Modell: Sie zählt die Wege mit ihren Beschreibungen auf und bittet um genau ein Wort. '
-        + 'Die Antwort wird mit den Namen der Wege verglichen, passt keiner, nimmt sie den ersten. '
-        + 'Jeder Weg ist ein eigener Ausgang an der Karte.',
+    parts: [t('piece.model.label'), slot('OPTIONS', t('piece.model.slot'), 'route_option')],
+    explain: t('piece.model.explain'),
 })
 
 DEFINITIONS.push({
     type: TYPES.routeOption,
     colour: COLOURS.condition,
     fits: 'route_option',
-    parts: ['🏷️ Weg', text('NAME', 'technik'), BREAK, 'für', text('HINT', 'Fragen zu Technik, Computern und Programmieren', { wide: true })],
-    explain: 'Ein Weg der schlauen Weiche: Der Name ist das Wort, mit dem das Modell antworten soll, '
-        + 'die Beschreibung hilft ihm bei der Wahl. An der Karte wird daraus ein eigener Ausgang.',
+    parts: [t('piece.way.label'), text('NAME', t('piece.way.name.default')), BREAK, t('piece.way.for'), text('HINT', t('piece.way.hint.default'), { wide: true })],
+    explain: t('piece.way.explain'),
 })
 
 // ---------------------------------------------------------------------------
@@ -466,10 +503,8 @@ DEFINITIONS.push({
     type: TYPES.settings,
     colour: COLOURS.setup,
     fits: 'setup',
-    parts: ['⚙️ Einstellungen aus .env'],
-    explain: 'Ohne dieses Teil stehen Modell, Prompts und Grenzen fest im Code. '
-        + 'Mit ihm liest load_env_file() die Datei .env, os.getenv() nimmt den Wert oder den Standard, '
-        + 'und ein Prüfabschnitt bricht früh mit einer klaren Meldung ab, wenn ein Wert nicht passt.',
+    parts: [t('piece.settings.label')],
+    explain: t('piece.settings.explain'),
 })
 
 DEFINITIONS.push({
@@ -477,16 +512,15 @@ DEFINITIONS.push({
     colour: COLOURS.state,
     fits: 'state_field',
     parts: [
-        '🔤 Feld', text('NAME', 'summary'),
-        'vom Typ', dropdown('TYPE', 'str', [
-            ['Text (str)', 'str'],
-            ['Zahl (int)', 'int'],
-            ['Kommazahl (float)', 'float'],
-            ['Ja/Nein (bool)', 'bool'],
+        t('piece.field.label'), text('NAME', 'summary'),
+        t('piece.field.type'), dropdown('TYPE', 'str', [
+            [t('piece.field.type.str'), 'str'],
+            [t('piece.field.type.int'), 'int'],
+            [t('piece.field.type.float'), 'float'],
+            [t('piece.field.type.bool'), 'bool'],
         ]),
     ],
-    explain: 'Ein Feld ist ein weiterer Schlüssel im State-dict, mit einem leeren Startwert. '
-        + 'Gibt ein Knoten {"summary": ...} zurück, überschreibt die Engine genau diesen Schlüssel.',
+    explain: t('piece.field.explain'),
 })
 
 // ===========================================================================
@@ -497,9 +531,15 @@ DEFINITIONS.push({
 //
 //   Tools used to hang at the agent. Now they hang at a workshop and the agent
 //   plugs into it: the tool links move to the first workshop, the agent gets a plug.
+//   The memory used to hang at the agent too. Now it hangs at START, next to the
+//   notepad: the first memory link moves to START, the others are dropped.
 //
 
 export function migrateWorkspace(workspace) {
+    return moveMemoryToStart(moveToolsToWorkshop(workspace))
+}
+
+function moveToolsToWorkshop(workspace) {
     const edges = workspace?.edges ?? []
     const nodes = workspace?.nodes ?? []
     const oldLinks = edges.filter(edge => edge.kind === 'use' && edge.port === 'tools'
@@ -517,6 +557,21 @@ export function migrateWorkspace(workspace) {
     return { ...workspace, edges: [...kept, ...moved, ...plugs] }
 }
 
+function moveMemoryToStart(workspace) {
+    const edges = workspace?.edges ?? []
+    const nodes = workspace?.nodes ?? []
+    const start = nodes.find(node => node.type === TYPES.start)
+    const oldLinks = edges.filter(edge => edge.kind === 'use' && edge.port === 'memory' && edge.from !== start?.id)
+    if (oldLinks.length === 0) return workspace
+
+    const kept = edges.filter(edge => !oldLinks.includes(edge))
+    const hasStartMemory = kept.some(edge => edge.kind === 'use' && edge.from === start?.id && edge.port === 'memory')
+    if (null == start || hasStartMemory) return { ...workspace, edges: kept }
+
+    const moved = { id: `use-${start.id}-memory`, kind: 'use', from: start.id, port: 'memory', to: oldLinks[0].to }
+    return { ...workspace, edges: [...kept, moved] }
+}
+
 // ===========================================================================
 // ==============================   DESCRIBE   ===============================
 // ===========================================================================
@@ -530,48 +585,28 @@ export function migrateWorkspace(workspace) {
 //
 
 const DESCRIPTIONS = {
-    [TYPES.start]: 'Ich bin der Eingang. Jede neue Frage oder Aufgabe kommt bei mir an. '
-        + 'Ich schreibe sie auf den Notizzettel, der unten an mir hängt, und gebe ihn an den ersten Graphling weiter. '
-        + 'Der Zettel wandert dann von Karte zu Karte bis zum Ziel.',
-    [TYPES.end]: 'Ich bin das Ziel einer Runde. Kommt die Arbeit bei mir an, ist sie fertig. '
-        + 'Im Chat geht das Gespräch trotzdem weiter: Die nächste Frage beginnt wieder bei START.',
-    [TYPES.agent]: 'Ich bin ein Agent! Ich lese das bisherige Gespräch vom Notizzettel, nehme meine Rolle (den System-Prompt) '
-        + 'und frage damit mein Modell. Seine Antwort schreibe ich auf den Zettel. '
-        + 'Hängen Werkzeuge an mir, darf das Modell sie benutzen, statt gleich zu antworten.',
-    [TYPES.summarize]: 'Ich räume auf. Wird das Gespräch zu lang, lasse ich das Modell die alten Nachrichten '
-        + 'zu einer kurzen Zusammenfassung verdichten und behalte nur die letzten paar.',
-    [TYPES.workshop]: 'Ich bin die Werkstatt, ein Werkzeugkasten. Unten hängen meine Werkzeuge. '
-        + 'Ein Agent, der an mir hängt, fragt mich, was ich alles kann. Bittet sein Modell dann um ein Werkzeug, '
-        + 'führe ich es aus und schreibe das Ergebnis auf den Notizzettel. Dann darf der Agent weitermachen.',
-    [TYPES.router]: 'Ich bin eine Weiche. Ich schaue mir an, wie es gerade steht, und entscheide, wohin es weitergeht. '
-        + 'Mit einem Modell kann ich sogar selbst überlegen, welcher Spezialist die Frage bekommt.',
-    [TYPES.model]: 'Ich bin das Sprachmodell, sozusagen ein Gehirn zum Ausleihen. Ich merke mir nichts: '
-        + 'Wer mich fragt, muss mir jedes Mal das ganze Gespräch mitschicken. '
-        + 'Die Temperatur sagt, wie kreativ (hoch) oder vorhersehbar (niedrig) ich antworte.',
-    [TYPES.state]: 'Ich bin der Notizzettel einer Runde. Auf mir stehen alle Nachrichten und was du sonst festlegst, '
-        + 'zum Beispiel eine Zusammenfassung. START gibt mich zu Beginn jeder Runde aus, '
-        + 'dann wandere ich von Graphling zu Graphling, und jeder liest mich und schreibt etwas dazu.',
-    [TYPES.memory]: 'Ich bin das Gedächtnis. Nach jeder Runde lege ich den Notizzettel in eine Schublade '
-        + 'und hole ihn bei der nächsten Frage wieder heraus. Wer an mir hängt, erinnert sich.',
-    [TYPES.tool]: 'Ich bin ein Werkzeug. Das Modell kann nicht gut rechnen und kennt die Uhrzeit nicht, ich schon. '
-        + 'Ich liege in einer Werkstatt, und jeder Agent an dieser Werkstatt darf mich benutzen.',
-    [PLAN_TYPE]: 'Der Bauplan gilt für den ganzen Graphen: Chat (Frage um Frage) oder Aufgabe (einmal durchlaufen), '
-        + 'und wie viele Schritte eine Runde höchstens machen darf.',
-    [TYPES.settings]: 'Mit diesem Teil kommen Werte wie Prompts und Grenzen aus einer Einstellungsdatei, '
-        + 'statt fest im Programm zu stehen.',
-    [TYPES.stateField]: 'Ein Feld ist eine weitere Zeile auf dem Notizzettel, zum Beispiel für die Zusammenfassung.',
-    [TYPES.conditionLength]: 'Die Frage, die die Weiche stellt: Ist das Gespräch schon länger als so viele Nachrichten?',
-    [TYPES.conditionContains]: 'Die Frage, die die Weiche stellt: Steht dieses Wort in der letzten Antwort? '
-        + 'Damit kann ein Kritiker „OK“ sagen, wenn ein Text gut genug ist.',
-    [TYPES.conditionTools]: 'Die Frage, die die Weiche stellt: Will das Modell gerade ein Werkzeug benutzen?',
-    [TYPES.conditionModel]: 'Hier entscheidet das Modell selbst: Es liest die Frage und wählt einen der Wege.',
-    [TYPES.routeOption]: 'Ein Weg, den die Weiche wählen kann. Die Beschreibung hilft dem Modell bei der Wahl.',
-    flow: 'Diese Linie sagt: Wenn der eine fertig ist, ist der nächste dran. So entsteht der Ablauf.',
-    'use-workshop': 'Das ist die Steckdose zwischen Agent und Werkstatt 🔌. Über sie fragt der Agent: „Was kannst du?“ '
-        + 'und gibt die Antwort seinem Modell mit. Genau so funktioniert MCP (Model Context Protocol): '
-        + 'Ein Programm bietet Werkzeuge an, ein Agent steckt sich ein und darf sie benutzen.',
-    use: 'Diese gepunktete Linie heißt „benutzt“: Der Graphling greift darauf zu, während er arbeitet. '
-        + 'Sie ist kein Schritt im Ablauf.',
+    [TYPES.start]: t('describe.start'),
+    [TYPES.end]: t('describe.end'),
+    [TYPES.agent]: t('describe.agent'),
+    [TYPES.summarize]: t('describe.summarize'),
+    [TYPES.workshop]: t('describe.workshop'),
+    [TYPES.router]: t('describe.router'),
+    [TYPES.model]: t('describe.model'),
+    [TYPES.state]: t('describe.state'),
+    [TYPES.memory]: t('describe.memory'),
+    [TYPES.tool]: t('describe.tool'),
+    [TYPES.helper]: t('describe.helper'),
+    [PLAN_TYPE]: t('describe.plan'),
+    [TYPES.settings]: t('describe.settings'),
+    [TYPES.stateField]: t('describe.field'),
+    [TYPES.conditionLength]: t('describe.length'),
+    [TYPES.conditionContains]: t('describe.contains'),
+    [TYPES.conditionTools]: t('describe.tools'),
+    [TYPES.conditionModel]: t('describe.modelDecides'),
+    [TYPES.routeOption]: t('describe.way'),
+    flow: t('describe.flow'),
+    'use-workshop': t('describe.useWorkshop'),
+    use: t('describe.use'),
 }
 
 export function getDescription(typeOrKind) {
@@ -587,17 +622,17 @@ export function getDescription(typeOrKind) {
 
 export const PALETTE = [
     {
-        name: 'Graphlings',
+        name: t('palette.graphlings'),
         colour: COLOURS.agent,
         types: [TYPES.agent, TYPES.summarize, TYPES.workshop, TYPES.router, TYPES.start, TYPES.end],
     },
     {
-        name: 'Ressourcen',
+        name: t('palette.resources'),
         colour: COLOURS.model,
-        types: [TYPES.model, TYPES.state, TYPES.memory, TYPES.tool],
+        types: [TYPES.model, TYPES.state, TYPES.memory, TYPES.tool, TYPES.helper],
     },
     {
-        name: 'Puzzleteile',
+        name: t('palette.pieces'),
         colour: COLOURS.condition,
         types: [
             TYPES.conditionModel, TYPES.routeOption, TYPES.conditionTools, TYPES.conditionContains,

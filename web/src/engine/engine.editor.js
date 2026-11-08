@@ -8,8 +8,10 @@
 //   flowMark: '🗂️', a sign in the middle of every flow edge, it travels along when editor.travel() is called
 //   editor.on('change', workspace => ...)      // any change, also every key in a field
 //   editor.on('select', id => ...)             // node, edge or piece id, null for nothing
+//   editor.on('travel', ({ fromId, toId, phase }) => ...)   // phase 'start' or 'end' of a flow mark journey
 //   editor.load(workspace)
 //   editor.setNodeStatus(nodeId, 'running' | 'done' | null)
+//   editor.setTravelDuration(ms)              // how long the flow mark takes per edge, default 550
 
 //
 //   Chapters:
@@ -19,7 +21,8 @@
 
 import { bendPath, edgePath, nearestSegment, renderCard, usePath } from './engine.cards.js'
 import { cloneJson, connect, createBlock, findBlock, findOwnerNode, History, insertBlock, normalizeWorkspace, removeBlock } from './engine.model.js'
-import { element, fillSelect, fitTextInput, renderBlock, resolveOptions } from './engine.render.js'
+import { element, fillSelect, fitTextArea, fitTextInput, renderBlock, resolveOptions } from './engine.render.js'
+import { t } from '../i18n.js'
 
 const DRAG_THRESHOLD_PX = 4
 const ZOOM_MIN = 0.4
@@ -32,7 +35,7 @@ const FIT_MARGIN_PX = 48
 const BUBBLE_HALF_WIDTH_PX = 150
 const BUBBLE_MARGIN_PX = 12
 const BUBBLE_ROOM_PX = 170
-const TRAVEL_DURATION_MS = 550
+const DEFAULT_TRAVEL_DURATION_MS = 550
 const NEW_NODE_OFFSET_PX = 80
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -83,9 +86,10 @@ export class GraphEditor {
     #closedBubbleId = null    // the selection whose bubble the user closed
     #flowMark
     #travelQueue = Promise.resolve()
+    #travelDurationMs = DEFAULT_TRAVEL_DURATION_MS
     #workspace
     #history = new History()
-    #listeners = { change: [], select: [], fieldinput: [] }
+    #listeners = { change: [], select: [], fieldinput: [], travel: [] }
     #selectedId = null
     #status = new Map()
     #edgeLines = new Map()  // edge id -> [from, ...bend points, to] in canvas units, set in drawEdges
@@ -252,6 +256,10 @@ export class GraphEditor {
         this.#applyStatus()
     }
 
+    setTravelDuration(ms) {
+        this.#travelDurationMs = Math.max(100, Number(ms) || DEFAULT_TRAVEL_DURATION_MS)
+    }
+
     // Lets the flow mark travel from one card to another along the flow edges between them,
     // also through one card in between (a switch). Calls queue up, so the marks follow each other.
     travel(fromId, toId) {
@@ -262,10 +270,13 @@ export class GraphEditor {
 
         const second = null != direct ? null : this.#workspace.edges.find(edge => edge.kind !== 'use' && edge.from === first.to && edge.to === toId)
         const route = [first, second].filter(Boolean)
-        this.#travelQueue = this.#travelQueue.then(() => route.reduce(
-            (previous, edge) => previous.then(() => this.#travelAlong(edge.id)),
-            Promise.resolve(),
-        ))
+        this.#travelQueue = this.#travelQueue
+            .then(() => this.#emit('travel', { fromId, toId, phase: 'start' }))
+            .then(() => route.reduce(
+                (previous, edge) => previous.then(() => this.#travelAlong(edge.id)),
+                Promise.resolve(),
+            ))
+            .then(() => this.#emit('travel', { fromId, toId, phase: 'end' }))
     }
 
     #travelAlong(edgeId) {
@@ -280,7 +291,7 @@ export class GraphEditor {
         const startTime = performance.now()
         return new Promise(resolve => {
             const step = now => {
-                const share = Math.min(1, (now - startTime) / TRAVEL_DURATION_MS)
+                const share = Math.min(1, (now - startTime) / this.#travelDurationMs)
                 const point = path.getPointAtLength(length * share)
                 traveller.setAttribute('x', point.x)
                 traveller.setAttribute('y', point.y)
@@ -329,18 +340,18 @@ export class GraphEditor {
         const travelLayer = svgElement('svg', { class: 'gl-edges gl-travel' })     // above the cards
         const cardLayer = element('div', { className: 'gl-cards' })
         const canvas = element('div', { className: 'gl-canvas' }, [edgeLayer, cardLayer, travelLayer])
-        const trash = element('div', { className: 'gl-trash', attributes: { title: 'Hierher ziehen zum Löschen' }, text: '🗑️' })
+        const trash = element('div', { className: 'gl-trash', attributes: { title: t('editor.trash') }, text: '🗑️' })
         const controls = element('div', { className: 'gl-controls' }, [
-            control('↶', 'Rückgängig (Strg+Z)', () => this.undo()),
-            control('↷', 'Wiederholen (Strg+Y)', () => this.redo()),
-            control('＋', 'Vergrößern', () => this.#zoomAt(ZOOM_STEP)),
-            control('－', 'Verkleinern', () => this.#zoomAt(1 / ZOOM_STEP)),
-            control('⌂', 'Alles zeigen', () => this.fitView()),
+            control('↶', t('editor.undo'), () => this.undo()),
+            control('↷', t('editor.redo'), () => this.redo()),
+            control('＋', t('editor.zoomIn'), () => this.#zoomAt(ZOOM_STEP)),
+            control('－', t('editor.zoomOut'), () => this.#zoomAt(1 / ZOOM_STEP)),
+            control('⌂', t('editor.fit'), () => this.fitView()),
         ])
 
         // Inspector: can fold to a narrow strip, so the graph gets the whole stage.
         const inspectorTitle = element('span')
-        const inspectorToggle = element('button', { className: 'gl-control gl-inspector-toggle', attributes: { type: 'button', title: 'Einklappen' }, text: '⟩' })
+        const inspectorToggle = element('button', { className: 'gl-control gl-inspector-toggle', attributes: { type: 'button', title: t('editor.inspector.fold') }, text: '⟩' })
         const inspectorBody = element('div', { className: 'gl-inspector-body' })
         const inspector = element('aside', { className: 'gl-inspector' }, [
             element('div', { className: 'gl-inspector-title' }, [inspectorToggle, inspectorTitle]),
@@ -349,7 +360,7 @@ export class GraphEditor {
         inspectorToggle.addEventListener('click', () => this.#setInspectorOpen(inspector.classList.contains('is-folded')))
         // Speech bubble: lives on the stage, not the canvas, so it stays readable at any zoom.
         const bubbleText = element('p', { className: 'gl-bubble-text' })
-        const bubbleClose = element('button', { className: 'gl-bubble-close', attributes: { type: 'button', title: 'Schließen' }, text: '×' })
+        const bubbleClose = element('button', { className: 'gl-bubble-close', attributes: { type: 'button', title: t('editor.close') }, text: '×' })
         const bubble = element('div', { className: 'gl-bubble', attributes: { hidden: '' } }, [bubbleClose, bubbleText])
         const stage = element('div', { className: 'gl-stage' }, [canvas, controls, trash, bubble, inspector])
 
@@ -364,14 +375,14 @@ export class GraphEditor {
     #setInspectorOpen(isOpen) {
         this.#elements.inspector.classList.toggle('is-folded', !isOpen)
         this.#elements.inspectorToggle.textContent = isOpen ? '⟩' : '⟨'
-        this.#elements.inspectorToggle.title = isOpen ? 'Einklappen' : 'Puzzle der Karte zeigen'
+        this.#elements.inspectorToggle.title = isOpen ? t('editor.inspector.fold') : t('editor.inspector.unfold')
     }
 
     #renderPaletteItem(type) {
         const definition = this.#definitions.get(type)
         const block = createBlock(definition, { x: 0, y: 0 })
         const preview = null != definition.node
-            ? renderCard(block, this.#renderContext())
+            ? renderCard(block, { ...this.#renderContext(), isPalette: true })
             : renderBlock(block, { ...this.#renderContext(), isPreview: true })
         return element('div', { className: 'gl-palette-item', attributes: { 'data-type': type, title: 'Ziehen oder klicken' } }, [preview])
     }
@@ -460,15 +471,17 @@ export class GraphEditor {
         const definition = this.#definitions.get(block.type)
         const isPlan = block === this.#workspace.plan
 
-        const title = isPlan ? '🛰️ Bauplan des Graphen' : `🐣 Karte: ${definition.node.title({ block, workspace: this.#workspace }) || '…'}`
+        const title = isPlan
+            ? t('editor.inspector.plan')
+            : t('editor.inspector.card', { title: definition.node.title({ block, workspace: this.#workspace }) || '…' })
         this.#elements.inspectorTitle.textContent = title
 
         const hasSlots = definition.parts.some(part => null != part?.slot)
         const hasFields = definition.parts.some(part => null != part?.field)
-        let hint = 'Diese Karte hat nichts einzustellen.'
-        if (hasFields) hint = 'Das Puzzle in der Karte: hier stellst du sie ein.'
-        if (hasSlots) hint = 'Das Puzzle in der Karte: stell sie ein und zieh passende Puzzleteile in die Fächer.'
-        if (isPlan) hint = 'Gilt für den ganzen Graphen. Ziehe Puzzleteile aus der Palette in die Fächer.'
+        let hint = t('editor.inspector.hint.none')
+        if (hasFields) hint = t('editor.inspector.hint.fields')
+        if (hasSlots) hint = t('editor.inspector.hint.slots')
+        if (isPlan) hint = t('editor.inspector.hint.plan')
         this.#elements.inspectorBody.replaceChildren(
             renderBlock(block, this.#renderContext()),
             element('p', { className: 'gl-inspector-hint', text: hint }),
@@ -627,7 +640,7 @@ export class GraphEditor {
             value = input.value === '' || !Number.isFinite(number) ? oldValue : clamp(number, part.min, part.max)
         }
         if (part.kind === 'text') {
-            if (part.wide) input.title = value
+            if (part.wide) fitTextArea(input)
             else fitTextInput(input)
         }
         if (value === oldValue) return
@@ -744,6 +757,11 @@ export class GraphEditor {
             const card = this.#findCard(press.id)
             card.style.left = `${press.node.x}px`
             card.style.top = `${press.node.y}px`
+            // Over the trash or the palette the card is doomed: dropping it there deletes it.
+            const hits = document.elementsFromPoint(event.clientX, event.clientY)
+            press.isOverTrash = hits.some(hit => this.#elements.trash.contains(hit) || this.#elements.palette.contains(hit))
+            this.#elements.trash.classList.toggle('is-hot', press.isOverTrash)
+            card.classList.toggle('gl-card-doomed', press.isOverTrash)
             return this.#drawEdges()
         }
         if (press.kind === 'bend') {
@@ -771,7 +789,12 @@ export class GraphEditor {
         }
 
         if (press.kind === 'card' && press.isMoving) {
+            this.#elements.trash.classList.remove('is-hot')
             this.#history.record(press.before)
+            if (press.isOverTrash) {
+                removeBlock(this.#workspace, press.id)
+                return this.#commit(null)
+            }
             return this.#commit(press.id)
         }
         if (press.kind === 'bend') {

@@ -14,6 +14,7 @@
 //                                                            'multiple: true' takes several links (tools)
 //           provides: 'model',                               knob on top: this card is a resource
 //           emoji: '🧠',                                    avatar instead of the graphling
+//           avatar: '<svg …>',                               own SVG markup instead of the default face
 //           chips: ({ block, workspace }) => ['🧠 Qwen'],    short facts below the title
 //       }
 
@@ -46,6 +47,12 @@ const CORNER_RADIUS_PX = 12
 // A card with 'emoji' shows it, every other card is a graphling with blinking eyes.
 function createAvatar(card) {
     const wrapper = element('span', { className: 'gl-avatar', attributes: { 'aria-hidden': 'true' } })
+    // Order of precedence: own markup > emoji > the default face
+    if (null != card.avatar) {
+        wrapper.classList.add('gl-avatar-monster')
+        wrapper.innerHTML = card.avatar
+        return wrapper
+    }
     wrapper.innerHTML = null != card.emoji
         ? `<span class="gl-avatar-emoji">${card.emoji}</span>`
         : `<svg viewBox="0 0 32 32" width="34" height="34">
@@ -57,12 +64,13 @@ function createAvatar(card) {
     return wrapper
 }
 
-export function renderCard(block, { definitions, workspace }) {
+export function renderCard(block, { definitions, workspace, isPalette = false }) {
     const card = definitions.get(block.type).node
-    const context = { block, workspace }
+    // isPalette: the card stands for its type, the title may show the type instead of the name.
+    const context = { block, workspace, isPalette }
 
     const node = element('div', {
-        className: `gl-card gl-card-${card.shape ?? 'creature'}`,
+        className: `gl-card gl-card-${card.shape ?? 'creature'}${null != card.avatar ? ' gl-has-monster' : ''}`,
         attributes: { 'data-node-id': block.id },
     })
     node.style.setProperty('--block-colour', definitions.get(block.type).colour)

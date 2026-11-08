@@ -134,6 +134,10 @@ class Api:
         self._runner.reset()
         return {"ok": True}
 
+    def set_step_delay(self, seconds: float) -> dict:
+        self._runner.set_step_delay(seconds)
+        return {"ok": True}
+
     def save_code(self, code: str) -> dict:
         result = self._window.create_file_dialog(
             webview.FileDialog.SAVE,

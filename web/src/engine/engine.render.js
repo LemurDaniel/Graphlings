@@ -13,6 +13,9 @@
 
 const MIN_TEXT_SIZE = 3
 const MAX_TEXT_SIZE = 18
+const MIN_TEXT_ROWS = 2
+const MAX_TEXT_ROWS = 10
+const CHARS_PER_ROW = 44     // about one row of the wide field at its font
 
 // ===========================================================================
 // ===============================   HELPERS   ===============================
@@ -22,6 +25,7 @@ const MAX_TEXT_SIZE = 18
 //   resolveOptions   The options of a dropdown, with a warning entry for unknown values.
 //   fillSelect       Puts options into a select and selects the value.
 //   fitTextInput     Grows a text input with its content, within limits.
+//   fitTextArea      Gives a wide text field as many rows as its text needs, within limits.
 //
 
 export function element(tag, { className, attributes = {}, text } = {}, children = []) {
@@ -57,6 +61,15 @@ export function fillSelect(select, options, value) {
 
 export function fitTextInput(input) {
     input.size = Math.min(MAX_TEXT_SIZE, Math.max(MIN_TEXT_SIZE, input.value.length + 1))
+}
+
+// Rows from the text itself, so it works before the field is in the DOM: every line
+// counts at least one row, a long line as many as it wraps into.
+export function fitTextArea(textarea) {
+    const rows = textarea.value.split('\n')
+        .map(line => Math.max(1, Math.ceil(line.length / CHARS_PER_ROW)))
+        .reduce((sum, count) => sum + count, 0)
+    textarea.rows = Math.min(MAX_TEXT_ROWS, Math.max(MIN_TEXT_ROWS, rows))
 }
 
 // ===========================================================================
@@ -96,14 +109,22 @@ function renderField(part, block, context) {
         return input
     }
 
-    // Text: long texts get a wide field with a tooltip showing everything.
+    // Text: long texts like prompts get a wide, multi-line field that grows with the text.
+    if (part.wide) {
+        const textarea = element('textarea', {
+            className: 'gl-input gl-input-text gl-input-wide',
+            attributes: { ...attributes, spellcheck: 'false' },
+        })
+        textarea.value = value ?? ''
+        fitTextArea(textarea)
+        return textarea
+    }
     const input = element('input', {
-        className: part.wide ? 'gl-input gl-input-text gl-input-wide' : 'gl-input gl-input-text',
+        className: 'gl-input gl-input-text',
         attributes: { ...attributes, type: 'text', spellcheck: 'false' },
     })
     input.value = value ?? ''
-    if (part.wide) input.title = input.value
-    else fitTextInput(input)
+    fitTextInput(input)
     return input
 }
 
