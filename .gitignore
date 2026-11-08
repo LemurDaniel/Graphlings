@@ -1,0 +1,16 @@
+# Downloaded by build.ps1: llama-server, the model (1.1 GB) and their licenses
+runtime/
+
+# Build output of build.ps1 and tests
+build/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local settings of the generated chat.py
+.env
+
+# Local Claude Code preview config, points to a machine-specific Python
+.claude/launch.json

@@ -1,0 +1,399 @@
+/*
+    NOTE:
+      Look of Graphlings: warm, round and playful, light and dark.
+*/
+
+:root {
+    --bg: #fff8ee;
+    --panel: #ffffff;
+    --text: #2b2440;
+    --muted: #7a7290;
+    --border: #eadfce;
+    --accent: #ff8a3d;
+    --accent-text: #ffffff;
+    --code-bg: #fdfaf4;
+    --code-text: #2b2440;
+    --code-line: #b3a99a;
+    --code-mark: rgba(255, 196, 61, 0.35);
+    --code-mark-border: #f0a500;
+    --tok-keyword: #c2185b;
+    --tok-string: #2e7d32;
+    --tok-comment: #8a8195;
+    --tok-number: #c75b00;
+    --tok-name: #1565c0;
+    --error: #d93c5a;
+    --hint: #b07a00;
+    --ok: #2f9e5a;
+    --canvas-bg: #fffdf8;
+    --canvas-dot: #eadfce;
+    --edge-colour: #9b8fb8;
+    --radius: 14px;
+    color-scheme: light;
+}
+
+/* Light is the default, dark only when chosen with the theme button. */
+:root[data-theme="dark"] {
+    --bg: #17142a;
+    --panel: #221e38;
+    --text: #f1edfb;
+    --muted: #a39cbd;
+    --border: #352f52;
+    --code-bg: #120f20;
+    --code-text: #ece8f6;
+    --code-line: #6d6488;
+    --code-mark: rgba(255, 196, 61, 0.22);
+    --code-mark-border: #ffc43d;
+    --tok-keyword: #ff7ab6;
+    --tok-string: #9be59b;
+    --tok-comment: #8d84a8;
+    --tok-number: #ffb86c;
+    --tok-name: #7cc7ff;
+    --edge-colour: #8a80a8;
+    --error: #ff6b86;
+    --hint: #ffcc55;
+    --ok: #5fd38d;
+    --canvas-bg: #1b1830;
+    --canvas-dot: #352f52;
+    color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+}
+
+/* Top bar */
+.topbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+}
+
+.brand {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+}
+
+.brand h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 0.5px;
+}
+
+.mascot {
+    display: inline-block;
+    font-size: 26px;
+    animation: hop 2.4s ease-in-out infinite;
+}
+
+@keyframes hop {
+    0%, 80%, 100% { transform: translateY(0); }
+    88% { transform: translateY(-6px) rotate(-6deg); }
+}
+
+.tagline, .muted { color: var(--muted); }
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+button {
+    border: 2px solid var(--border);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--text);
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+}
+
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+
+.start-button, #button-send {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+    font-weight: 600;
+}
+
+/* Layout: the graph fills the window, the code takes the right side only when shown */
+.layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    gap: 12px;
+    padding: 0 16px 16px;
+    min-height: 0;
+}
+
+body.is-code-hidden .layout { grid-template-columns: minmax(0, 1fr); }
+body.is-code-hidden .code { display: none; }
+
+.panel {
+    background: var(--panel);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    min-height: 0;
+}
+
+.panel-title {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+}
+
+.panel-title .muted {
+    font-weight: 400;
+    font-size: 12px;
+}
+
+.blocks { min-height: 420px; }
+
+/* Code */
+.code {
+    display: flex;
+    flex-direction: column;
+}
+
+.code-view {
+    flex: 1;
+    margin: 0;
+    overflow: auto;
+    background: var(--code-bg);
+    color: var(--code-text);
+    font: 12.5px/1.5 "Cascadia Code", Consolas, monospace;
+    counter-reset: line;
+}
+
+.code-line {
+    display: block;
+    padding: 0 12px 0 0;
+    white-space: pre;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+}
+
+.code-line::before {
+    counter-increment: line;
+    content: counter(line);
+    display: inline-block;
+    width: 3.2em;
+    margin-right: 12px;
+    text-align: right;
+    color: var(--code-line);
+}
+
+.code-line.is-marked {
+    background: var(--code-mark);
+    border-left-color: var(--code-mark-border);
+}
+
+.tok-keyword { color: var(--tok-keyword); }
+.tok-string { color: var(--tok-string); }
+.tok-comment { color: var(--tok-comment); font-style: italic; }
+.tok-number { color: var(--tok-number); }
+.tok-name { color: var(--tok-name); }
+
+/* How the code does it: above the code, for the selected card */
+.explain-code {
+    margin: 0;
+    padding: 8px 12px;
+    border-bottom: 1px dashed var(--border);
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.explain-code:empty { display: none; }
+
+/* Dock: start button and chat float at the bottom right, above the graph */
+.dock {
+    position: fixed;
+    right: 28px;
+    bottom: 28px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.start-button {
+    padding: 10px 20px;
+    font-size: 15px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.start-button.is-blocked {
+    background: var(--panel);
+    border-color: var(--hint);
+    color: var(--hint);
+}
+
+.chat-popup {
+    width: min(380px, calc(100vw - 56px));
+    height: min(500px, calc(100vh - 160px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--panel);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.chat-popup[hidden] { display: none; }
+
+.icon-button {
+    padding: 2px 8px;
+    font-size: 13px;
+}
+
+.problems {
+    max-height: 30%;
+    overflow: auto;
+    margin: 0;
+    padding: 8px 12px 8px 30px;
+    border-bottom: 2px solid var(--border);
+    font-size: 13px;
+}
+
+.problems:empty { display: none; }
+.problems li { cursor: pointer; }
+.problems .is-error { color: var(--error); }
+.problems .is-hint { color: var(--hint); }
+
+.status {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.status-ready { color: var(--ok); }
+.status-starting { color: var(--hint); }
+.status-failed, .status-missing { color: var(--error); }
+
+.chat-log {
+    flex: 1;
+    overflow: auto;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.bubble {
+    max-width: 85%;
+    padding: 8px 12px;
+    border-radius: 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.bubble-user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: var(--accent-text);
+}
+
+.bubble-ai {
+    align-self: flex-start;
+    background: var(--bg);
+    border: 2px solid var(--border);
+}
+
+.bubble-info {
+    align-self: center;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.bubble-error {
+    align-self: stretch;
+    color: var(--error);
+    font-family: Consolas, monospace;
+    font-size: 12px;
+}
+
+.chat-form {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-top: 2px solid var(--border);
+}
+
+.chat-form input {
+    flex: 1;
+    min-width: 0;
+    border: 2px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+}
+
+/* Narrow windows: code below the graph */
+@media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; grid-template-rows: minmax(420px, 1fr) 360px; }
+}
+
+/* Example menu: looks like the other buttons */
+.example-select {
+    border: 2px solid var(--border);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--text);
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+}
+
+/* An answer bubble names the agent that wrote it */
+.bubble-ai[data-agent]::before {
+    content: attr(data-agent);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* The final notepad of a task, folded */
+.notepad {
+    align-self: stretch;
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+.notepad summary { cursor: pointer; font-weight: 600; }
+
+.notepad pre {
+    max-height: 240px;
+    overflow: auto;
+    margin: 6px 0 0;
+    font: 11.5px/1.4 "Cascadia Code", Consolas, monospace;
+    white-space: pre-wrap;
+}

@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+    NOTE:
+      The one page of Graphlings: the graph fills the window, the code opens on request,
+      the chat pops up from the start button at the bottom right.
+      Opened by app/main.py in a pywebview window, works in a plain browser without the chat.
+-->
+<html lang="de" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Graphlings</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="src/engine/engine.css">
+</head>
+<body class="is-code-hidden">
+    <header class="topbar">
+        <div class="brand">
+            <span class="mascot" aria-hidden="true">🐣</span>
+            <h1>Graphlings</h1>
+            <span class="tagline">Agents und Graphen zum Zusammenstecken</span>
+        </div>
+        <div class="actions">
+            <select id="example-select" class="example-select" title="Ein Beispiel-Graph zu jedem Muster">
+                <option value="">🧩 Beispiel laden …</option>
+            </select>
+            <button id="button-clear" type="button">🧹 Leeren</button>
+            <button id="button-code" type="button" title="Den Python-Code zum Graphen zeigen">🐍 Code zeigen</button>
+            <button id="button-copy" type="button">📋 Code kopieren</button>
+            <button id="button-save" type="button">💾 chat.py speichern</button>
+            <button id="button-theme" type="button" title="Hell oder dunkel">🌙 Dunkel</button>
+        </div>
+    </header>
+
+    <main class="layout">
+        <section id="blocks" class="panel blocks" aria-label="Graph"></section>
+
+        <section class="panel code">
+            <div class="panel-title">🐍 Python <span id="code-hint" class="muted">Klick auf eine Karte markiert ihre Zeilen</span></div>
+            <p id="explain-code" class="explain-code"></p>
+            <pre id="code" class="code-view" tabindex="0"></pre>
+        </section>
+    </main>
+
+    <!-- Start button and chat, floating at the bottom right -->
+    <div class="dock">
+        <section id="chat" class="chat-popup" hidden aria-label="Ausprobieren">
+            <div class="panel-title">
+                <span id="chat-title">💬 Ausprobieren</span>
+                <span id="model-status" class="status status-starting">Modell startet …</span>
+                <button id="button-reset" type="button" class="icon-button" disabled title="Neues Gespräch, neue thread_id">🔄</button>
+                <button id="button-chat-close" type="button" class="icon-button" title="Schließen">✕</button>
+            </div>
+            <ul id="problems" class="problems"></ul>
+            <div id="chat-log" class="chat-log" aria-live="polite"></div>
+            <form id="chat-form" class="chat-form">
+                <input id="chat-input" type="text" placeholder="Erst den Graphen starten …" autocomplete="off" disabled>
+                <button id="button-send" type="submit" disabled>Senden</button>
+            </form>
+        </section>
+        <button id="button-start" type="button" class="start-button">▶️ Graph starten</button>
+    </div>
+
+    <script type="module" src="src/app.js"></script>
+</body>
+</html>
