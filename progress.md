@@ -80,5 +80,11 @@ not learning a framework.
 
 ## Next step
 
-Rebuild the exe (`./build.ps1`, the web/ folder changed), unzip it on a clean machine (or folder) and click
-through the four examples in the window. Then decide on the parallel pattern.
+1. Verify the release pipeline with a real run: push a tag (`git tag v0.1.1 && git push origin v0.1.1`) and watch
+   Actions -> "Release Graphlings". The v0.1.0 zip was built and uploaded by hand, the exe self-test passed.
+2. Download the v0.1.0 zip on a clean machine and click through the five examples in the window (monsters, slow mode,
+   language switch, helper agents).
+3. Then the parallel pattern (fan-out / fan-in), possibly on top of the helper agents.
+
+Small leftovers: Python-side status messages are German only; the monsters have no error state (the engine knows
+only running and done); the pipeline YAML was not checked with actionlint.
