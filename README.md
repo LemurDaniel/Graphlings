@@ -84,6 +84,8 @@ python tests/test.model.py                                    # Beispiele gegen 
 
 Der Dev-Server braucht nur die Standardbibliothek und `runtime/`. Er liefert die Seite ohne Cache aus und bietet dieselbe Schnittstelle wie die App unter `/api/*`, Antworten streamen als Server-Sent Events. Nur die Oberfläche ohne Chat: `web/` mit einem beliebigen statischen Webserver öffnen.
 
+Release: Ein Tag wie `v0.2.0` pushen, dann baut [die Pipeline](.github/workflows/release.yaml) auf Windows die Zip, lässt den Generator-Test und den Self-Test laufen und legt das GitHub-Release mit der Zip als Download an. Ohne Tag (manuell gestartet) baut sie nur und hebt die Zip eine Woche als Artefakt auf.
+
 Build prüfen ohne Fenster: `build/dist/Graphlings/Graphlings.exe --self-test <chat.py>` schreibt das Ergebnis nach `%LOCALAPPDATA%/Graphlings/self-test.txt`.
 
 ## Aufbau 📁
@@ -94,4 +96,5 @@ Build prüfen ohne Fenster: `build/dist/Graphlings/Graphlings.exe --self-test <c
 | `web/` | Die Seite: eigener Graph-Editor, Karten und Puzzleteile, Monster, Texte in Deutsch und Englisch, Python-Generator, Chat |
 | `tests/` | `test.generator.mjs`: erzeugt und prüft alle Beispiele in beiden Sprachen mit Node. `test.model.py`: lässt sie gegen das echte Modell laufen und prüft den Weg |
 | `build.ps1` | Lädt die Runtime, baut die Exe und das Zip |
+| `.github/` | Release-Pipeline (baut und veröffentlicht bei einem `v*`-Tag) und die Release-Notizen |
 | `THIRD_PARTY_LICENSES.md` | Mitgelieferte Komponenten und ihre Lizenzen |

@@ -17,6 +17,7 @@ Read `progress.md` first (goal, decisions, open items, next step) and update it 
   `dev_server.py` serves the page plus the chat API over HTTP for a plain browser.
 - `build.ps1`: runtime download (llama.cpp + Qwen2.5 1.5B GGUF into `runtime/`), PyInstaller exe, zip.
 - `tests/test.generator.mjs`: writes `build/graph.<example>.py` for every example.
+- `.github/workflows/release.yaml`: on a `v*` tag builds the zip on windows-latest, runs generator test and exe self-test, creates the release.
 
 ## Commands
 

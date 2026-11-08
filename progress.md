@@ -49,6 +49,8 @@ not learning a framework.
   German examples use German names everywhere (zusammenfassen, dichter, uebersetzer), English ones English names.
 - 2026-11-08: Dragging a card onto the trash (or back into the palette) deletes it, the card fades while it hovers there.
   Pieces and new cards could do that before, moved cards could not. The chick 🐣 is gone, the monsters 👾 took over.
+- 2026-11-08: Released v0.1.0 on github.com/LemurDaniel/Graphlings (repo now public). `.github/workflows/release.yaml` builds and
+  releases on every `v*` tag (runtime cached, generator test, exe self-test, notes from .github/release.notes.md).
 - 2026-11-08: Prompts are edited in a multi-line textarea that grows with the text (2 to 10 rows, resizable), no more
   single line with an ellipsis.
 - 2026-11-08: Slow mode 🐢: a slider in the chat (0 to 3 s, saved per browser) sets `GraphRunner.set_step_delay()`: every

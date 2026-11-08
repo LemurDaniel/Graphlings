@@ -1,0 +1,110 @@
+# ---------------------------------------------------------------------------
+# Release Graphlings
+#   Builds the Windows zip on a tag like v0.1.0 and publishes it as a GitHub
+#   release. On a manual run it only builds and keeps the zip as an artifact.
+#
+#   Usage:
+#     git tag v0.2.0 && git push origin v0.2.0      # build, test, release
+#     Actions -> Release Graphlings -> Run workflow  # build and test only
+#
+#   Needs no secrets: the release is created with the GITHUB_TOKEN of the run
+#   (permission contents: write). The runtime (llama-server and the model, about
+#   1.1 GB) is downloaded by build.ps1 and cached between runs.
+#
+#   Notes for the release come from .github/release.notes.md, GitHub appends
+#   the list of changes since the last tag.
+# ---------------------------------------------------------------------------
+name: Release Graphlings
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # creates the release and uploads the zip
+
+env:
+  UV_VERSION: "0.13.7"
+  NODE_VERSION: "22"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tools: Node for the generator test, Python for the syntax check and uv.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install uv
+        shell: pwsh
+        env:
+          UV_VERSION: ${{ env.UV_VERSION }}
+        run: |
+          pip install --quiet "uv==$env:UV_VERSION"
+          uv --version
+
+      # The runtime only changes when build.ps1 pins another llama.cpp tag or model.
+      - name: Cache runtime
+        uses: actions/cache@v4
+        with:
+          path: runtime
+          key: runtime-${{ runner.os }}-${{ hashFiles('build.ps1') }}
+
+      # Generator test: every example in both languages, the Python compiles.
+      - name: Test generator
+        shell: pwsh
+        run: |
+          $env:PYTHON = (Get-Command -Name python).Source
+          node tests/test.generator.mjs
+          if ($LASTEXITCODE -NE 0) {
+              throw [System.InvalidOperationException]::new("The generator test failed with exit code $LASTEXITCODE.")
+          }
+
+      # Build: runtime download (or cache), PyInstaller exe, zip.
+      - name: Build exe and zip
+        shell: pwsh
+        run: ./build.ps1
+
+      # Self-test: the fresh exe loads the chat example and gets one answer from the model.
+      - name: Self-test exe
+        shell: pwsh
+        run: |
+          $ResultFile = Join-Path -Path $env:LOCALAPPDATA -ChildPath 'Graphlings/self-test.txt'
+          $Process = Start-Process -FilePath 'build/dist/Graphlings/Graphlings.exe' -ArgumentList '--self-test', (Resolve-Path -Path 'build/graph.chat.py') -Wait -PassThru -NoNewWindow
+          $Result = if (Test-Path -Path $ResultFile) { Get-Content -Path $ResultFile -Raw } else { '(no self-test.txt)' }
+          Write-Host "Self-test: $Result"
+          if ($Process.ExitCode -NE 0 -OR -NOT $Result.StartsWith('OK')) {
+              throw [System.InvalidOperationException]::new("The self-test failed with exit code $($Process.ExitCode): $Result")
+          }
+
+      # Release on a tag: the zip as asset, notes from the file plus the generated change list.
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create $env:TAG 'build/Graphlings-win-x64.zip' --title "Graphlings $env:TAG" --notes-file '.github/release.notes.md' --generate-notes --latest
+          if ($LASTEXITCODE -NE 0) {
+              throw [System.InvalidOperationException]::new("gh release create failed with exit code $LASTEXITCODE.")
+          }
+
+      # Manual run: keep the zip for a week, so it can be tested without a release.
+      - name: Upload zip as artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Graphlings-win-x64
+          path: build/Graphlings-win-x64.zip
+          retention-days: 7
