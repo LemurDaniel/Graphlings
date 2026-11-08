@@ -103,8 +103,7 @@ function teaser() {
 
     ${placed(MASCOT, 60, 36, 150)}
     <text x="230" y="110" class="headline">Graphlings</text>
-    <text x="232" y="148" class="tagline">Agents und Graphen zum Zusammenstecken.</text>
-    <text x="232" y="180" class="tagline">Lesbares Python, lokales Modell, kleine Monster.</text>
+    <text x="232" y="160" class="tagline">Agents und Graphen zum Zusammenstecken.</text>
     ${badge(WIDTH - 180, 28)}
 
     ${cards}
