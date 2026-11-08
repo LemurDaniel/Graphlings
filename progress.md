@@ -85,9 +85,10 @@ not learning a framework.
    to every unzipped file and .NET Framework refuses to load a marked `Python.Runtime.dll`. Fix in `app/main.py`:
    `unblock_app_files()` strips the stream at start (what `Unblock-File` does). Verified with a fresh build: marked
    `Python.Runtime.dll`, exe starts and logs the removal; the CI self-test cannot catch it (no mark in CI).
-1. Verify the release pipeline with a real run: push a tag (`git tag v0.1.1 && git push origin v0.1.1`) and watch
-   Actions -> "Release Graphlings". The v0.1.0 zip was built and uploaded by hand, the exe self-test passed.
-2. Download the v0.1.0 zip on a clean machine and click through the five examples in the window (monsters, slow mode,
+1. Done 2026-11-08: the release pipeline ran green for `v0.1.2` (generator test in both languages, exe self-test
+   `OK Hallo!`, zip uploaded). `v0.1.1` is a tag without a release: its run failed because the generator test
+   followed the runner locale (English only) and `build/graph.chat.py` was missing, fixed in the test.
+2. Download the v0.1.2 zip on a clean machine and click through the five examples in the window (monsters, slow mode,
    language switch, helper agents).
 3. Then the parallel pattern (fan-out / fan-in), possibly on top of the helper agents.
 
