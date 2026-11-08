@@ -80,6 +80,11 @@ not learning a framework.
 
 ## Next step
 
+0. 2026-11-08: The v0.1.0 zip crashed on start after a browser download: `Failed to resolve
+   Python.Runtime.Loader.Initialize`. Cause: Explorer propagates the Mark-of-the-Web (`Zone.Identifier` stream)
+   to every unzipped file and .NET Framework refuses to load a marked `Python.Runtime.dll`. Fix in `app/main.py`:
+   `unblock_app_files()` strips the stream at start (what `Unblock-File` does). Verified with a fresh build: marked
+   `Python.Runtime.dll`, exe starts and logs the removal; the CI self-test cannot catch it (no mark in CI).
 1. Verify the release pipeline with a real run: push a tag (`git tag v0.1.1 && git push origin v0.1.1`) and watch
    Actions -> "Release Graphlings". The v0.1.0 zip was built and uploaded by hand, the exe self-test passed.
 2. Download the v0.1.0 zip on a clean machine and click through the five examples in the window (monsters, slow mode,

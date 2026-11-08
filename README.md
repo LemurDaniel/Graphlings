@@ -10,6 +10,9 @@ Agents und Graphen zum Zusammenstecken. In der Mitte baust du einen Graphen aus 
 
 1. Die neueste `Graphlings-win-x64.zip` von der [Release-Seite](https://github.com/LemurDaniel/Graphlings/releases/latest) herunterladen (ca. 1,1 GB, das Modell ist dabei) und entpacken.
 2. `Graphlings/Graphlings.exe` starten. Windows warnt eventuell („Unbekannter Herausgeber“): *Weitere Informationen → Trotzdem ausführen*.
+   Startet die Exe gar nicht (Fehler mit `Python.Runtime.dll`), hat Windows die entpackten Dateien als Download markiert.
+   Ab v0.1.1 entfernt die Exe die Markierung beim Start selbst; vorher hilft einmalig in PowerShell:
+   `Get-ChildItem -Path .\Graphlings -Recurse | Unblock-File`
 3. Unten rechts **▶️ Graph starten** klicken. Im Fenster, das aufgeht, warten, bis **🟢 Modell bereit** steht, dann lostippen.
 
 Nichts zu installieren: Python, llama-server und das Modell (Qwen2.5 1.5B) stecken im Ordner. Alles läuft lokal, ohne Internet.

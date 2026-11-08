@@ -43,9 +43,10 @@ logger = logging.getLogger("graphlings")
 # ===============================   HELPERS   ===============================
 # ===========================================================================
 #
-#   find_base_dir   Folder with web/ and runtime/, next to the exe or the repo root.
-#   find_work_dir   Writable folder for chat.py, logs and the page storage.
-#   describe_error  One readable line for the chat, the full trace for the log.
+#   find_base_dir       Folder with web/ and runtime/, next to the exe or the repo root.
+#   find_work_dir       Writable folder for chat.py, logs and the page storage.
+#   unblock_app_files   Removes the download mark from the packed files, .NET refuses them otherwise.
+#   describe_error      One readable line for the chat, the full trace for the log.
 #
 
 
@@ -66,6 +67,36 @@ def find_work_dir() -> Path:
     work_dir = Path(root) / APP_NAME
     work_dir.mkdir(parents=True, exist_ok=True)
     return work_dir
+
+
+def unblock_app_files(base_dir: Path) -> int:
+    """
+    Files unzipped from a browser download carry the Mark-of-the-Web (the
+    'Zone.Identifier' stream). .NET Framework refuses to load such a managed DLL,
+    so pywebview dies with "Failed to resolve Python.Runtime.Loader.Initialize".
+    Removing the stream is what 'Unblock-File' does, here for every file of the app.
+
+    :param base_dir: (Required) The folder next to Graphlings.exe.
+    :returns:        The number of unblocked files, 0 when run from source or not on Windows.
+    """
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return 0
+
+    unblocked = 0
+    for file in base_dir.rglob("*"):
+        if not file.is_file():
+            continue
+        try:
+            os.remove(f"{file}:Zone.Identifier")
+            unblocked += 1
+        except FileNotFoundError:
+            continue        # no mark on this file, the normal case
+        except OSError as error:
+            # A read-only install folder: the first start then needs 'Unblock-File' by hand.
+            logger.warning("[unblock_app_files] Could not unblock '%s': %s", file, error)
+    if unblocked:
+        logger.warning("[unblock_app_files] Removed the download mark from %d files.", unblocked)
+    return unblocked
 
 
 def describe_error(error: Exception) -> str:
@@ -210,6 +241,7 @@ def main() -> int:
         filename=work_dir / "graphlings.log",
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    unblock_app_files(base_dir)
 
     server = ModelServer(base_dir / "runtime", work_dir / "llama-server.log")
     runner = GraphRunner(work_dir)
