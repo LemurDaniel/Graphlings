@@ -1,5 +1,7 @@
 # 👾 Graphlings
 
+![Graphlings: Agents und Graphen zum Zusammenstecken](docs/teaser.svg)
+
 > 🤖 **KI-Hinweis:** Dieses Projekt ist mit KI-Unterstützung entstanden. Code, Texte und die Monster-Grafiken wurden zusammen mit Claude Code (Anthropic) geschrieben und vom Autor geprüft. Der Chat im Programm läuft gegen ein kleines lokales Sprachmodell (Qwen2.5 1.5B). Seine Antworten können falsch oder unvollständig sein, nichts davon verlässt deinen Rechner.
 
 Agents und Graphen zum Zusammenstecken. In der Mitte baust du einen Graphen aus Karten: kleine Graphlings, die du mit Kanten von Puzzle-Nase zu Puzzle-Kerbe verbindest. Auf jeder Karte sitzt ihr Monster, in jeder Karte steckt ein Puzzle mit ihren Einstellungen. Mit **🐍 Code zeigen** klappst du den lesbaren Python-Code daneben auf, er entsteht live mit. Mit **▶️ Graph starten** unten rechts läuft der Graph sofort gegen ein eingebautes lokales Modell. Dabei leuchtet die Karte, die gerade arbeitet, ihr Monster denkt nach, und der Notizzettel wandert über die Kanten.
@@ -97,4 +99,5 @@ Build prüfen ohne Fenster: `build/dist/Graphlings/Graphlings.exe --self-test <c
 | `tests/` | `test.generator.mjs`: erzeugt und prüft alle Beispiele in beiden Sprachen mit Node. `test.model.py`: lässt sie gegen das echte Modell laufen und prüft den Weg |
 | `build.ps1` | Lädt die Runtime, baut die Exe und das Zip |
 | `.github/` | Release-Pipeline (baut und veröffentlicht bei einem `v*`-Tag) und die Release-Notizen |
+| `docs/`, `tools/` | Das Teaser-Bild der README und `make.teaser.mjs`, das es aus den echten Monster-Grafiken erzeugt |
 | `THIRD_PARTY_LICENSES.md` | Mitgelieferte Komponenten und ihre Lizenzen |
