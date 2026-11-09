@@ -8,6 +8,16 @@ Agents und Graphen zum Zusammenstecken. In der Mitte baust du einen Graphen aus 
 
 ## Für Tester 🚀
 
+### Im Browser (empfohlen) 🌐
+
+**[lemurdaniel.github.io/Graphlings](https://lemurdaniel.github.io/Graphlings/)** öffnen, unten rechts **▶️ Graph starten** klicken. Fertig, nichts zu installieren.
+
+- Beim ersten Start lädt der Browser das Modell einmalig herunter (ca. 1 GB, Fortschritt oben im Chat). Danach liegt es im Browser-Cache und startet in Sekunden.
+- Alles läuft auf deinem Rechner: das Modell über [wllama](https://github.com/ngxson/wllama) (llama.cpp als WebAssembly), der erzeugte Python-Code über [Pyodide](https://pyodide.org). Keine Frage geht an einen Server.
+- Am schnellsten mit **Chrome oder Edge** (WebGPU, rechnet auf der Grafikkarte). Ohne WebGPU rechnet der Prozessor: Die erste Antwort dauert dann bis zu einer Minute, danach etwa zehn Sekunden. Gemessen auf einer Intel-iGPU: WebGPU 5 s pro Frage, Prozessor 10 s.
+
+### Als Programm (offline) 💾
+
 1. Die neueste `Graphlings-win-x64.zip` von der [Release-Seite](https://github.com/LemurDaniel/Graphlings/releases/latest) herunterladen (ca. 1,1 GB, das Modell ist dabei) und entpacken.
 2. `Graphlings/Graphlings.exe` starten. Windows warnt eventuell („Unbekannter Herausgeber“): *Weitere Informationen → Trotzdem ausführen*.
    Startet die Exe gar nicht (Fehler mit `Python.Runtime.dll`), hat Windows die entpackten Dateien als Download markiert.
@@ -84,8 +94,11 @@ uv run --with-requirements app/requirements.txt app/main.py   # App aus dem Quel
 python app/dev_server.py                                      # Seite + Chat im Browser unter http://127.0.0.1:8777
 node tests/test.generator.mjs                                 # alle Beispiele erzeugen und prüfen, Deutsch und Englisch
 python tests/test.model.py                                    # Beispiele gegen das echte Modell, prüft den Weg durch den Graphen
+node tests/test.web.mjs                                       # Web-Version in Edge (headless), einmalig vorher: cd tests; npm install
 ./build.ps1                                                   # build/Graphlings-win-x64.zip bauen
 ```
+
+Die Web-Version lokal ausprobieren: `python app/dev_server.py --no-model`, dann `http://127.0.0.1:8777/?engine=web` öffnen. Der Dev-Server sendet die COOP/COEP-Header, die das Modell im Browser braucht (SharedArrayBuffer). Auf GitHub Pages übernimmt das `web/coi-serviceworker.js`. Veröffentlicht wird bei jedem Push auf `master` über [die Pages-Pipeline](.github/workflows/pages.yaml).
 
 Der Dev-Server braucht nur die Standardbibliothek und `runtime/`. Er liefert die Seite ohne Cache aus und bietet dieselbe Schnittstelle wie die App unter `/api/*`, Antworten streamen als Server-Sent Events. Nur die Oberfläche ohne Chat: `web/` mit einem beliebigen statischen Webserver öffnen.
 
@@ -98,9 +111,9 @@ Build prüfen ohne Fenster: `build/dist/Graphlings/Graphlings.exe --self-test <c
 | Pfad | Inhalt |
 | --- | --- |
 | `app/` | Python: Fenster (pywebview), Dev-Server für den Browser, Runner für den erzeugten Code, Modellserver |
-| `web/` | Die Seite: eigener Graph-Editor, Karten und Puzzleteile, Monster, Texte in Deutsch und Englisch, Python-Generator, Chat |
-| `tests/` | `test.generator.mjs`: erzeugt und prüft alle Beispiele in beiden Sprachen mit Node. `test.model.py`: lässt sie gegen das echte Modell laufen und prüft den Weg |
+| `web/` | Die Seite: eigener Graph-Editor, Karten und Puzzleteile, Monster, Texte in Deutsch und Englisch, Python-Generator, Chat. In `web/src/browser/` Modell und Python im Browser für GitHub Pages |
+| `tests/` | `test.generator.mjs`: erzeugt und prüft alle Beispiele in beiden Sprachen mit Node. `test.model.py`: lässt sie gegen das echte Modell laufen und prüft den Weg. `test.web.mjs`: die Web-Version in Edge |
 | `build.ps1` | Lädt die Runtime, baut die Exe und das Zip |
-| `.github/` | Release-Pipeline (baut und veröffentlicht bei einem `v*`-Tag) und die Release-Notizen |
+| `.github/` | Release-Pipeline (baut und veröffentlicht bei einem `v*`-Tag), Pages-Pipeline (Web-Version bei jedem Push auf `master`) und die Release-Notizen |
 | `docs/`, `tools/` | Das Teaser-Bild der README und `make.teaser.mjs`, das es aus den echten Monster-Grafiken erzeugt |
 | `THIRD_PARTY_LICENSES.md` | Mitgelieferte Komponenten und ihre Lizenzen |
