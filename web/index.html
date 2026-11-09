@@ -12,6 +12,11 @@
     <title>Graphlings</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="src/engine/engine.css">
+    <!-- The model in the browser needs cross-origin isolation (SharedArrayBuffer). GitHub Pages
+         cannot send the headers, so this service worker adds them and reloads once. Locally the
+         app and app/dev_server.py need no worker: dev_server.py sends the headers itself. -->
+    <script>window.coi = { shouldRegister: () => !['127.0.0.1', 'localhost'].includes(location.hostname) }</script>
+    <script src="coi-serviceworker.js"></script>
 </head>
 <body class="is-code-hidden">
     <header class="topbar">

@@ -8,11 +8,12 @@
 #   python app/dev_server.py                 # http://127.0.0.1:8777
 #   python app/dev_server.py --port 9000
 #   python app/dev_server.py --no-model      # page only, the chat says the model is missing
+#   http://127.0.0.1:8777/?engine=web        # the model in the browser instead, like on GitHub Pages
 
 #
 #   Chapters:
 #     HELPERS          Paths and the one-line error text.
-#     SERVE PAGE       Static files from web/, never cached, so edits show at once.
+#     SERVE PAGE       Static files from web/ and runner.py, never cached, cross-origin isolated.
 #     SERVE API        model_status, start_graph, ask (streamed), reset, set_step_delay.
 #     RUN SERVER       Starts the model and the server, stops both on Ctrl+C.
 #
@@ -74,6 +75,8 @@ def describe_error(error: Exception) -> str:
 #
 #   The page files come from web/. Every response says 'no-store', so the browser
 #   loads changed JS and CSS at once, without the fetch(url, {cache: 'reload'}) dance.
+#   COOP and COEP make the page cross-origin isolated, which the model in the browser needs
+#   (web/src/browser/bridge.web.js). /runner.py is app/runner.py, which the browser runs in Pyodide.
 #
 
 
@@ -89,7 +92,15 @@ class DevHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         super().end_headers()
+
+    def translate_path(self, path: str) -> str:
+        # The page asks for runner.py next to itself, like on GitHub Pages.
+        if path.split("?")[0] == "/runner.py":
+            return str(Path(__file__).resolve().parent / "runner.py")
+        return super().translate_path(path)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - signature of the base class
         logger.debug("[DevHandler] " + format, *args)

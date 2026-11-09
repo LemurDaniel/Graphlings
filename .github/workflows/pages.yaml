@@ -1,0 +1,96 @@
+# ---------------------------------------------------------------------------
+# Publish Graphlings on GitHub Pages
+#   The page with the model right in the browser: nothing to install, no exe
+#   warning. wllama (llama.cpp as WebAssembly) and Pyodide come pinned from
+#   jsDelivr, the model (about 1 GB) from Hugging Face on the first start.
+#
+#   Usage:
+#     push to master (web/ or app/runner.py changed)   # test, build, publish
+#     Actions -> Publish Graphlings on Pages -> Run workflow
+#
+#   Needs no secrets. Once in the repo: Settings -> Pages -> Source "GitHub Actions".
+#
+#   The site is web/ plus app/runner.py as runner.py: the browser runs the same
+#   runner as the app, in Pyodide (web/src/browser/worker.python.js).
+# ---------------------------------------------------------------------------
+name: Publish Graphlings on Pages
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "web/**"
+      - "app/runner.py"
+      - ".github/workflows/pages.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write      # deploys the site
+  id-token: write   # proves the deployment comes from this workflow
+
+# One deployment at a time, a newer push waits instead of cancelling a running one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Build
+  #   Checks the generator, puts web/ and runner.py together as the site.
+  # ---------------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Generator test: every example in both languages, the Python compiles.
+      - name: Test generator
+        shell: pwsh
+        run: |
+          $env:PYTHON = (Get-Command -Name python).Source
+          node tests/test.generator.mjs
+          if ($LASTEXITCODE -NE 0) {
+              throw [System.InvalidOperationException]::new("The generator test failed with exit code $LASTEXITCODE.")
+          }
+
+      - name: Assemble site
+        shell: pwsh
+        run: |
+          $null = New-Item -ItemType Directory -Path '_site' -Force
+          Copy-Item -Path 'web/*' -Destination '_site' -Recurse
+          Copy-Item -Path 'app/runner.py' -Destination '_site/runner.py'
+          Remove-Item -Path '_site/README.md', '_site/src/README.md', '_site/src/engine/README.md', '_site/src/browser/README.md' -ErrorAction SilentlyContinue
+          Get-ChildItem -Path '_site' -Recurse -File | Select-Object -ExpandProperty FullName
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  # ---------------------------------------------------------------------------
+  # Deploy
+  #   Publishes the site, the URL shows in the run and in Settings -> Pages.
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

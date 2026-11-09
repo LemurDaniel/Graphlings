@@ -14,3 +14,6 @@ __pycache__/
 
 # Local Claude Code preview config, points to a machine-specific Python
 .claude/launch.json
+
+# Packages of tests/test.web.mjs (npm install --prefix tests)
+node_modules/
