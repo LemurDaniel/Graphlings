@@ -13,11 +13,14 @@ Read `progress.md` first (goal, decisions, open items, next step) and update it 
   Every visible text lives in `texts.js` (German + English) and is read through `t()` from `i18n.js`.
   The monsters (SVG per graphling type, mascot) live in `monsters.graph.js`, their behaviour in `monsters.live.js`,
   the animations in `web/style.css`.
+  `web/src/browser/`: the web version (GitHub Pages) without install: model via wllama, the unchanged `app/runner.py`
+  in Pyodide, `urlopen` patched by `shim.urllib.py`. Bridge order in `app.js`: pywebview > dev server > web > none.
 - `app/`: pywebview window (`main.py`), runs the generated code (`runner.py`), starts llama-server (`model_server.py`),
   `dev_server.py` serves the page plus the chat API over HTTP for a plain browser.
 - `build.ps1`: runtime download (llama.cpp + Qwen2.5 1.5B GGUF into `runtime/`), PyInstaller exe, zip.
 - `tests/test.generator.mjs`: writes `build/graph.<example>.py` for every example.
 - `.github/workflows/release.yaml`: on a `v*` tag builds the zip on windows-latest, runs generator test and exe self-test, creates the release.
+- `.github/workflows/pages.yaml`: on push to master (web/, app/runner.py) publishes `web/` plus `runner.py` on GitHub Pages.
 
 ## Commands
 
@@ -27,6 +30,7 @@ uv run --with-requirements app/requirements.txt app/main.py   # run the app from
 python app/dev_server.py                                      # page + chat in the browser at http://127.0.0.1:8777 (stdlib only)
 node tests/test.generator.mjs                                 # generate + check all examples in both languages (set $env:PYTHON = (uv python find 3.12) for the syntax check)
 python tests/test.model.py                                    # examples against the real model, checks the way taken
+node tests/test.web.mjs                                       # web version in headless Edge (once: cd tests; npm install)
 ./build.ps1                                                   # exe + zip, only on request (takes long)
 ```
 
@@ -52,6 +56,9 @@ The dev server sends no-store, so edits show on a plain reload. With another sta
   the generator writes them as Python string literals.
 - Saved graphs live in localStorage (`graphlings.workspace.v3`). Changing ports needs a step in `migrateWorkspace()`.
 - llama-server: `--ctx-size 8192` and `MAX_ANSWER_TOKENS` are needed for multi-agent graphs (reflection).
+- Web version: nothing from a CDN may be imported at the top of a module `app.js` loads (the offline exe has no internet),
+  `bridge.web.js` imports wllama on first use. The page must stay cross-origin isolated (COOP/COEP), so every
+  cross-origin resource needs CORS or CORP (jsDelivr and Hugging Face send them).
 - Never use `window.confirm()`/`alert()`: the Claude browser pane (and some webviews) block native dialogs and return false.
   Use `askConfirm()` in `app.js` (the `<dialog>` in index.html).
 

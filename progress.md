@@ -78,6 +78,35 @@ not learning a framework.
 - Small-model quirks: occasionally miscopies tool results (weekday) or mixes English words into answers.
 - Python-side status messages (`app/model_server.py`, `app/runner.py`) are still German only.
 
+## Web version (decided 2026-11-09)
+
+Why: the SmartScreen warning on the unsigned exe scares people off. Decision: web version on GitHub Pages as the main
+way, the exe stays as the offline variant. Engine: wllama (llama.cpp as WASM).
+
+Spike 2026-11-09 (scratchpad, not in the repo), all working end to end in headless Edge:
+- wllama 3.13 is `server-context` of llama-server: `createChatCompletion` OpenAI-like, tool calls via Jinja
+  (`--jinja` behaviour), streaming, WebGPU. Same GGUF straight from Hugging Face (CORS ok), cached after the first download.
+- Pyodide 0.29 in a worker runs the unchanged `app/runner.py` and the unchanged generated code. Only
+  `urllib.request.urlopen` is patched: it posts to the main thread and blocks with `Atomics.wait` on a
+  SharedArrayBuffer (needs COOP/COEP, on Pages via coi-serviceworker). JSPI was skipped: stable only in Chromium.
+- Measured, tools example "17 * 23" (370 prompt tokens), Intel iGPU gen-12lp:
+  WebGPU prompt 70 tok/s, gen 8 tok/s, round 11 s first then 5 s. CPU 8 threads prompt 10 tok/s, gen 5.8 tok/s,
+  round 44 s first then 10 s. CPU 16 threads collapses (0.3 tok/s): cap threads at 8.
+- Model download 1 GB took 144 s, the cached load 5-8 s.
+
+Built 2026-11-09 on branch `web-version` (not merged, not pushed yet):
+- `web/src/browser/`: `bridge.web.js` (WebBridge, same calls as pywebview), `worker.python.js` (Pyodide + unchanged
+  `app/runner.py`), `shim.urllib.py`. wllama is imported on first use: a static CDN import would break the offline exe.
+- `app.js`: bridge order pywebview > dev server > web > none, `?engine=web` forces the web bridge. A first visit loads
+  the model on the first start click (info bubble about 1 GB), a cached model loads at page load. Status shows the
+  download percent, the tooltip says GPU or processor. WebGPU failure falls back to the processor.
+- `web/coi-serviceworker.js` (MIT, unchanged) for Pages, skipped on 127.0.0.1/localhost. `app/dev_server.py` sends
+  COOP/COEP and serves `/runner.py`.
+- `.github/workflows/pages.yaml`: generator test, `web/` + `runner.py` as site, deploy. Needs Pages enabled once
+  (Settings -> Pages -> Source "GitHub Actions"). Not checked with actionlint (not installed).
+- `tests/test.web.mjs` (playwright-core in `tests/package.json`): tools 391, chat answers, reflection notepad.
+  Passed 3/3 against the dev server and 3/3 against the assembled site served without headers (coi path).
+
 ## Next step
 
 0. 2026-11-08: The v0.1.0 zip crashed on start after a browser download: `Failed to resolve

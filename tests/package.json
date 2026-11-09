@@ -1,0 +1,8 @@
+{
+    "name": "graphlings-tests",
+    "private": true,
+    "description": "Only for tests/test.web.mjs: drives Edge or Chrome. The page and the generator need no packages.",
+    "devDependencies": {
+        "playwright-core": "1.56.0"
+    }
+}

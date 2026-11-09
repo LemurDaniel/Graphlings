@@ -10,11 +10,13 @@
 //     SET UP WORKSPACE    Language, theme, toolbox and the saved or example blocks.
 //     SHOW CODE           Renders the code, marks lines, explains blocks.
 //     CHAT WITH GRAPH     Model status, start, ask and reset via the Python bridge
-//                         (pywebview in the app, /api/* of app/dev_server.py in the browser).
+//                         (pywebview in the app, /api/* of app/dev_server.py, or the model
+//                         and Pyodide right in the browser: browser/bridge.web.js).
 //     BUTTONS             Example, clear, copy, save, the light or dark theme and the language.
 //
 
 import { DEFINITIONS, getDescription, getExplanation, migrateWorkspace, PALETTE, PLAN_TYPE, TYPES } from './blocks.graph.js'
+import { WebBridge } from './browser/bridge.web.js'
 import { GraphEditor } from './engine/engine.editor.js'
 import { EXAMPLES } from './examples.graph.js'
 import { generatePython } from './generator.python.js'
@@ -33,6 +35,7 @@ const EDGE_EXPLANATION = t('describe.edge.code')
 const USE_EXPLANATION = t('describe.use.code')
 const WORKSHOP_EXPLANATION = t('describe.useWorkshop.code')
 const STATUS_POLL_MS = 1000
+const RUNNER_URL = 'runner.py'    // app/runner.py, served next to the page (dev_server.py, Pages workflow)
 
 const PYTHON_KEYWORDS = new Set([
     'False', 'None', 'True', 'and', 'as', 'break', 'class', 'continue', 'def', 'del', 'elif',
@@ -335,12 +338,13 @@ elements.code.addEventListener('click', event => {
 //   3. Start     Loads the current code into the Python runner.
 //   4. Ask       Sends a question, tokens stream back via window.graphlings.
 //
-//   Without pywebview (plain browser) the chat stays off, the code still works.
+//   Without any bridge (a browser without cross-origin isolation) the chat stays off, the code still works.
 //
 
 let api = null
 let runningCode = null      // the code the runner has loaded, set in Start
 let isModelReady = false
+let modelState = 'starting' // idle (web: loads on the first start), starting, ready, missing, failed
 let isBusy = false
 
 // ---------------------------------------------------------------------------
@@ -349,26 +353,36 @@ let isBusy = false
 // ---------------------------------------------------------------------------
 
 const STATUS_TEXT = {
+    idle: t('ui.status.idle'),
     starting: t('ui.status.starting'),
     ready: t('ui.status.ready'),
     missing: t('ui.status.missing'),
     failed: t('ui.status.failed'),
 }
 
-function setStatus(state, message) {
+// percent and device only come from the web bridge: the download and where the model runs.
+function setStatus(state, message, { percent = null, device = null } = {}) {
     elements.status.className = `status status-${state}`
-    elements.status.textContent = STATUS_TEXT[state] ?? state
-    elements.status.title = message ?? ''
+    elements.status.textContent = state === 'starting' && null != percent
+        ? t('ui.status.download', { percent })
+        : STATUS_TEXT[state] ?? state
+    elements.status.title = message || (null != device ? t(`ui.status.device.${device}`) : '')
+}
+
+// Shows the state once, without bubbles: used by the poll and right after the web model loaded.
+async function refreshStatus() {
+    const status = await api.model_status()
+    setStatus(status.state, status.message, status)
+    modelState = status.state
+    isModelReady = status.state === 'ready'
+    updateChatControls()
+    return status
 }
 
 async function pollStatus() {
-    const { state, message } = await api.model_status()
-    setStatus(state, message)
-    isModelReady = state === 'ready'
-    updateChatControls()
-
+    const { state, message } = await refreshStatus()
     if (state === 'starting') return setTimeout(pollStatus, STATUS_POLL_MS)
-    if (state !== 'ready') addBubble('error', message)
+    if (state !== 'ready' && state !== 'idle') addBubble('error', message)
 }
 
 // In a plain browser app/dev_server.py offers the same calls under /api/*. Answers stream
@@ -425,13 +439,39 @@ class BrowserBridge {
     }
 }
 
-// Order of precedence: the app (pywebview) > the dev server (/api) > no model, build only.
+/*
+    Order of precedence:
+    - the app (pywebview)
+    - the dev server (/api), unless '?engine=web' asks for the browser model
+    - the model and Pyodide in the browser (needs cross-origin isolation)
+    - no model, build only
+*/
 async function connectBridge() {
+    const isWebForced = new URLSearchParams(location.search).get('engine') === 'web'
+    // the app (pywebview)
     api = window.pywebview?.api ?? null
-    if (null == api && await hasDevServer()) api = new BrowserBridge()
+    // the dev server (/api)
+    if (null == api && !isWebForced && await hasDevServer()) api = new BrowserBridge()
+    // the model and Pyodide in the browser
+    if (null == api && WebBridge.isSupported) api = new WebBridge({ runnerUrl: RUNNER_URL })
+    // no model, build only
     if (null == api) return setStatus('missing', t('ui.status.browser'))
-    pollStatus().catch(exception => setStatus('failed', exception.message))
+
     applySpeed(readSpeed())
+    // A browser that has the model cached loads it at once, a first visit waits for the start button (1 GB).
+    if (api instanceof WebBridge && await api.isModelCached()) api.start_model()
+    pollStatus().catch(exception => setStatus('failed', exception.message))
+}
+
+// Web bridge only: the first start downloads the model, the chat says what happens and why it takes long.
+async function loadModelInPage() {
+    if (modelState === 'idle' && !await api.isModelCached()) addBubble('info', t('ui.chat.download'))
+    const loading = api.start_model()
+    pollStatus().catch(exception => setStatus('failed', exception.message))
+    await loading
+
+    const { device } = await refreshStatus()
+    if (isModelReady && device === 'cpu') addBubble('info', t('ui.chat.cpu'))
 }
 
 async function hasDevServer() {
@@ -516,7 +556,7 @@ function updateChatControls() {
 function updateStartButton() {
     const isOutdated = null != runningCode && runningCode !== generated.code
     let label = t('ui.start')
-    if (null != api && !isModelReady) label = t('ui.start.loading')
+    if (null != api && !isModelReady && modelState !== 'idle') label = t('ui.start.loading')
     if (null != runningCode && !isOutdated) label = generated.isTask ? t('ui.chat.title.task') : t('ui.chat.title.chat')
     if (isOutdated) label = t('ui.start.restart')
     if (!generated.canRun) label = t('ui.start.blocked')
@@ -610,6 +650,8 @@ elements.buttonStart.addEventListener('click', async () => {
     openChat(true)
     if (!generated.canRun) return
     if (null == api) return addBubble('info', t('ui.chat.browserOnly'))
+    // The web bridge loads its model on the first start (or again after a failed load), then goes on.
+    if (!isModelReady && api instanceof WebBridge && modelState !== 'starting') await loadModelInPage()
     if (!isModelReady) return
     if (runningCode === generated.code) return elements.chatInput.focus()
 
