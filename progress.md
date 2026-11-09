@@ -94,7 +94,10 @@ Spike 2026-11-09 (scratchpad, not in the repo), all working end to end in headle
   round 44 s first then 10 s. CPU 16 threads collapses (0.3 tok/s): cap threads at 8.
 - Model download 1 GB took 144 s, the cached load 5-8 s.
 
-Built 2026-11-09 on branch `web-version` (not merged, not pushed yet):
+Live since 2026-11-09 at https://lemurdaniel.github.io/Graphlings/ (PR #1 merged, Pages on "GitHub Actions").
+`test.web.mjs` against the live site: 3/3 (first case 823 s incl. the 1 GB download, then 14-18 s per case).
+
+Built 2026-11-09 on branch `web-version`:
 - `web/src/browser/`: `bridge.web.js` (WebBridge, same calls as pywebview), `worker.python.js` (Pyodide + unchanged
   `app/runner.py`), `shim.urllib.py`. wllama is imported on first use: a static CDN import would break the offline exe.
 - `app.js`: bridge order pywebview > dev server > web > none, `?engine=web` forces the web bridge. A first visit loads
